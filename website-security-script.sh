@@ -104,6 +104,51 @@ build_file_list() {
     log "Indexed $count files for scanning"
 }
 
+# ── Security Score Calculation ────────────────────────────────────────────────
+calculate_security_score() {
+    local score=100
+    local grade=""
+    local grade_emoji=""
+    
+    # Point deductions
+    score=$((score - CRITICAL * 25))
+    score=$((score - HIGH * 15))
+    score=$((score - MEDIUM * 5))
+    score=$((score - LOW * 2))
+    
+    # Ensure score doesn't go below 0
+    [[ $score -lt 0 ]] && score=0
+    
+    # Calculate grade
+    if [[ $score -ge 90 ]]; then
+        grade="A"; grade_emoji="🟢"
+    elif [[ $score -ge 80 ]]; then
+        grade="B"; grade_emoji="🟡"
+    elif [[ $score -ge 70 ]]; then
+        grade="C"; grade_emoji="🟠"
+    elif [[ $score -ge 60 ]]; then
+        grade="D"; grade_emoji="🔴"
+    elif [[ $score -ge 50 ]]; then
+        grade="E"; grade_emoji="⚫"
+    else
+        grade="F"; grade_emoji="⚫"
+    fi
+    
+    echo "$score:$grade:$grade_emoji"
+}
+
+get_grade_description() {
+    local grade="$1"
+    case "$grade" in
+        "A") echo "Excellent security posture. Continue regular monitoring and keep systems updated." ;;
+        "B") echo "Good security with minor improvements needed. Address medium and low severity issues." ;;
+        "C") echo "Fair security with notable vulnerabilities. Address high severity issues promptly." ;;
+        "D") echo "Poor security with significant risks. Multiple high and critical issues require attention." ;;
+        "E") echo "Critical security state. Severe vulnerabilities present. Immediate action required." ;;
+        "F") echo "Failed security state. Critical compromise likely. Emergency security response needed." ;;
+    esac
+}
+
 # ── Helper Functions ──────────────────────────────────────────────────────────
 exclude_noise() { grep -vE "$EXCLUDE_PATTERN"; }
 
@@ -1739,6 +1784,13 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 log "Generating executive summary..."
 
+# Calculate security score and grade
+SCORE_DATA=$(calculate_security_score)
+SECURITY_SCORE=$(echo "$SCORE_DATA" | cut -d: -f1)
+SECURITY_GRADE=$(echo "$SCORE_DATA" | cut -d: -f2)
+GRADE_EMOJI=$(echo "$SCORE_DATA" | cut -d: -f3)
+GRADE_DESC=$(get_grade_description "$SECURITY_GRADE")
+
 if [[ "$CRITICAL" -gt 0 ]]; then
     RISK_LEVEL="🔴 CRITICAL"
     RISK_DESC="Critical security issues require immediate action. The website may already be compromised."
@@ -1760,6 +1812,10 @@ SUMMARY=$(cat <<EOF
 
 ## Executive Summary
 
+### Security Grade: $GRADE_EMOJI **$SECURITY_GRADE** (Score: $SECURITY_SCORE/100)
+
+$GRADE_DESC
+
 ### Overall Risk Level: $RISK_LEVEL
 
 $RISK_DESC
@@ -1775,11 +1831,26 @@ $RISK_DESC
 
 **Frameworks Detected:** $FW_LIST
 
+---
+
+### Scoring Methodology
+
+| Grade | Score Range | Description |
+|-------|-------------|-------------|
+| **A** | 90-100 | Excellent - Strong security posture |
+| **B** | 80-89 | Good - Minor improvements needed |
+| **C** | 70-79 | Fair - Notable vulnerabilities present |
+| **D** | 60-69 | Poor - Significant risks require attention |
+| **E** | 50-59 | Critical - Severe vulnerabilities |
+| **F** | 0-49 | Failed - Critical compromise likely |
+
+*Scoring: Critical (-25), High (-15), Medium (-5), Low (-2), Info (0)*
+
 EOF
 )
 
 TEMP_REPORT=$(mktemp)
-awk -v summary="$SUMMARY" '/^## 1\. Malware/ { print summary; print "---"; print "" } {print}' \
+awk -v summary="$SUMMARY" 'BEGIN { found=0 } /^---$/ && found==0 { print; print ""; print summary; found=1; next } {print}' \
     "$REPORT_FILE" > "$TEMP_REPORT"
 mv "$TEMP_REPORT" "$REPORT_FILE"
 
@@ -1866,8 +1937,9 @@ EOF
 if [[ -n "$WEBHOOK_URL" ]]; then
     log "Sending report to webhook..."
 
-    # Clean risk level (remove emoji)
+    # Clean risk level and grade (remove emoji)
     CLEAN_RISK=$(echo "$RISK_LEVEL" | sed 's/^[^ ]* //')
+    CLEAN_GRADE=$(echo "$SECURITY_GRADE" | sed 's/[^A-F]*//g')
 
     # Read report content and escape for JSON
     REPORT_CONTENT=$(cat "$REPORT_FILE")
@@ -1884,17 +1956,20 @@ data = {
     'scan_target': sys.argv[4],
     'frameworks': sys.argv[5],
     'risk_level': sys.argv[6],
-    'total_issues': int(sys.argv[7]),
-    'critical': int(sys.argv[8]),
-    'high': int(sys.argv[9]),
-    'medium': int(sys.argv[10]),
-    'low': int(sys.argv[11]),
-    'info': int(sys.argv[12]),
+    'security_grade': sys.argv[7],
+    'security_score': int(sys.argv[8]),
+    'total_issues': int(sys.argv[9]),
+    'critical': int(sys.argv[10]),
+    'high': int(sys.argv[11]),
+    'medium': int(sys.argv[12]),
+    'low': int(sys.argv[13]),
+    'info': int(sys.argv[14]),
     'report': sys.stdin.read()
 }
 print(json.dumps(data))
 " "$API_KEY" "$NOTIFY_EMAIL" "$(hostname 2>/dev/null || echo unknown)" "$SCAN_DIR" \
-  "$FW_LIST" "$CLEAN_RISK" "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
+  "$FW_LIST" "$CLEAN_RISK" "$SECURITY_GRADE" "$SECURITY_SCORE" \
+  "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
   < "$REPORT_FILE")
     elif command -v python &>/dev/null; then
         JSON_PAYLOAD=$(python -c "
@@ -1906,17 +1981,20 @@ data = {
     'scan_target': sys.argv[4],
     'frameworks': sys.argv[5],
     'risk_level': sys.argv[6],
-    'total_issues': int(sys.argv[7]),
-    'critical': int(sys.argv[8]),
-    'high': int(sys.argv[9]),
-    'medium': int(sys.argv[10]),
-    'low': int(sys.argv[11]),
-    'info': int(sys.argv[12]),
+    'security_grade': sys.argv[7],
+    'security_score': int(sys.argv[8]),
+    'total_issues': int(sys.argv[9]),
+    'critical': int(sys.argv[10]),
+    'high': int(sys.argv[11]),
+    'medium': int(sys.argv[12]),
+    'low': int(sys.argv[13]),
+    'info': int(sys.argv[14]),
     'report': sys.stdin.read()
 }
 print(json.dumps(data))
 " "$API_KEY" "$NOTIFY_EMAIL" "$(hostname 2>/dev/null || echo unknown)" "$SCAN_DIR" \
-  "$FW_LIST" "$CLEAN_RISK" "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
+  "$FW_LIST" "$CLEAN_RISK" "$SECURITY_GRADE" "$SECURITY_SCORE" \
+  "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
   < "$REPORT_FILE")
     else
         # Fallback: basic JSON escaping with sed
@@ -1930,6 +2008,8 @@ print(json.dumps(data))
   "scan_target": "$SCAN_DIR",
   "frameworks": "$FW_LIST",
   "risk_level": "$CLEAN_RISK",
+  "security_grade": "$SECURITY_GRADE",
+  "security_score": $SECURITY_SCORE,
   "total_issues": $TOTAL_ISSUES,
   "critical": $CRITICAL,
   "high": $HIGH,
@@ -1976,6 +2056,7 @@ echo "╔═══════════════════════�
 echo "║                       SCAN COMPLETE                            ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""
+log "Security Grade : $GRADE_EMOJI $SECURITY_GRADE (Score: $SECURITY_SCORE/100)"
 log "Frameworks     : $FW_LIST"
 log "Risk Level     : $RISK_LEVEL"
 log "Total Issues   : $TOTAL_ISSUES"
