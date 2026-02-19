@@ -10,6 +10,11 @@ A comprehensive bash-based security auditing tool that scans websites and web ap
 - **Code Obfuscation Detection**: Finds suspicious base64 encoding, hex encoding, and PHP obfuscation techniques
 - **Framework-Specific Audits**: Performs targeted security checks based on detected frameworks
 - **Dependency Scanning**: Checks outdated and vulnerable packages across npm, Composer, pip, and Bundler
+- **Security Score & Grading**: Calculates a 0–100 security score with letter grades (A+ through F) based on findings
+- **Background Scanning**: Run scans detached from the terminal — survives terminal close
+- **Scheduled Scans (Cron)**: Set up recurring scans with simple shortcuts or custom cron expressions
+- **Persistent Configuration**: Save default email, webhook, API key, and scan settings in a config file
+- **Email Notifications**: Send scan results via email (configurable per-scan or as default)
 - **Webhook Integration**: Sends security reports to remote endpoints via POST requests
 - **Markdown Reports**: Generates timestamped, detailed security reports in Markdown format
 - **Risk Classification**: Issues categorized by severity (Critical, High, Medium, Low, Info)
@@ -40,40 +45,82 @@ A comprehensive bash-based security auditing tool that scans websites and web ap
   - `python` or `python3` - For JSON payload formatting (webhook feature)
   - `php` - For PHP configuration analysis
   - `node` - For Node.js runtime analysis
+  - `crontab` - For scheduled scans (`--cron`)
 
 ## 🚀 Installation
 
-1. Download the script:
+### Quick Install (Global Command)
+
 ```bash
-wget https://raw.githubusercontent.com/codesandideas/website-security-script/main/website-security-script.sh
+sudo bash install.sh
 ```
 
-2. Make it executable:
+This installs the scanner as `webscan` in `/usr/local/bin` and creates a default config file at `~/.config/webscan/config`.
+
+### Manual
+
 ```bash
 chmod +x website-security-script.sh
+sudo bash website-security-script.sh /path/to/website
 ```
 
-3. Run with sudo privileges:
+### Uninstall
+
 ```bash
-sudo bash website-security-script.sh /path/to/website
+sudo bash uninstall.sh
 ```
 
 ## 📖 Usage
 
 ### Basic Scan
 
-Scan a website directory and generate a local report:
+```bash
+webscan /var/www/html
+```
+
+### Background Scan
+
+Run a scan that continues even after closing the terminal:
 
 ```bash
-sudo bash website-security-script.sh /var/www/html
+webscan /var/www/html --background
+```
+
+Output is logged to `~/.config/webscan/logs/scan_<timestamp>.log`. Monitor with:
+
+```bash
+tail -f ~/.config/webscan/logs/scan_*.log
+```
+
+### Scheduled Scans (Cron)
+
+Set up recurring scans using shortcuts or custom cron expressions:
+
+```bash
+# Built-in shortcuts
+webscan /var/www/html --cron hourly        # Every hour
+webscan /var/www/html --cron daily         # Every day at 2 AM
+webscan /var/www/html --cron weekly        # Every Sunday at 2 AM
+webscan /var/www/html --cron monthly       # 1st of each month at 2 AM
+
+# Custom cron expression
+webscan /var/www/html --cron '30 3 * * 1-5'   # Weekdays at 3:30 AM
+
+# With email notification
+webscan /var/www/html --cron daily --email admin@example.com
+```
+
+Manage cron jobs:
+
+```bash
+webscan --list-cron      # Show active webscan cron jobs
+webscan --remove-cron    # Remove all webscan cron jobs
 ```
 
 ### Scan with Webhook Notification
 
-Send the security report to a remote endpoint:
-
 ```bash
-sudo bash website-security-script.sh /var/www/html \
+webscan /var/www/html \
   --webhook https://yourdomain.com/security-receiver.php \
   --api-key YOUR_SECRET_KEY \
   --email admin@example.com
@@ -82,16 +129,52 @@ sudo bash website-security-script.sh /var/www/html \
 ### Command-Line Options
 
 ```
-Usage: sudo bash website-security-script.sh <path> [options]
+Usage: webscan <path> [options]
 
 Arguments:
-  <path>              Path to the website root directory
+  <path>                    Path to the website root directory
 
-Options:
-  --webhook <url>     Send report to a webhook endpoint via POST
-  --api-key <key>     API key for webhook authentication
-  --email <address>   Recipient email (passed to webhook)
-  --help              Show help message
+Scan Options:
+  --webhook <url>           Send report to a webhook endpoint via POST
+  --api-key <key>           API key for webhook authentication
+  --email <address>         Recipient email for this scan
+  --no-email                Skip email notification for this scan
+  --background              Run scan in background (survives terminal close)
+  --cron <schedule>         Set up a cron job for recurring scans
+                            Shortcuts: hourly, daily, weekly, monthly
+                            Custom:    '0 2 * * *' (cron expression)
+  --remove-cron             Remove all webscan cron jobs
+  --list-cron               List active webscan cron jobs
+
+Configuration:
+  --set-email <address>     Save default email address
+  --enable-email            Enable email notifications by default
+  --disable-email           Disable email notifications by default
+  --set-webhook <url>       Save default webhook URL
+  --set-api-key <key>       Save default API key
+  --show-config             Show current configuration
+  --edit-config             Open config file in editor
+  --help                    Show this help message
+```
+
+### Configuration
+
+The scanner stores persistent settings in `~/.config/webscan/config`. Set defaults so you don't have to pass options every time:
+
+```bash
+webscan --set-email admin@example.com    # Save default email
+webscan --enable-email                   # Enable email notifications
+webscan --set-webhook https://...        # Save default webhook URL
+webscan --set-api-key YOUR_KEY           # Save default API key
+webscan --show-config                    # View current configuration
+webscan --edit-config                    # Open config in your editor
+```
+
+Override any saved default on a per-scan basis:
+
+```bash
+webscan /path --email other@mail.com     # Use a different email for this scan
+webscan /path --no-email                 # Skip email for this scan
 ```
 
 ## 🔍 Scan Categories
@@ -151,6 +234,19 @@ Each detected framework receives targeted security checks:
 - Running processes analysis
 - Port scanning (listening services)
 
+### 8. **Security Score & Grade**
+
+After scanning, the tool calculates a security score (0–100) and assigns a letter grade:
+
+| Grade | Score Range | Meaning |
+|-------|------------|---------|
+| A+    | 95–100     | Excellent security posture |
+| A     | 90–94      | Very good |
+| B     | 80–89      | Good, minor issues |
+| C     | 70–79      | Fair, notable issues |
+| D     | 60–69      | Poor, significant issues |
+| F     | 0–59       | Critical, immediate action needed |
+
 ## 📤 Webhook Integration
 
 The scanner can POST scan results to a remote webhook endpoint in JSON format:
@@ -165,6 +261,8 @@ The scanner can POST scan results to a remote webhook endpoint in JSON format:
   "scan_target": "/var/www/html",
   "frameworks": "WordPress, Laravel",
   "risk_level": "🔴 Critical Risk",
+  "security_grade": "D",
+  "security_score": 62,
   "total_issues": 42,
   "critical": 5,
   "high": 12,
@@ -196,6 +294,7 @@ security-report_YYYY-MM-DD_HH-MM-SS.md
    - Scan timestamp and target
    - Detected frameworks
    - Overall risk level
+   - Security score and grade
    - Issue statistics
 
 2. **Findings by Category**
@@ -216,6 +315,27 @@ security-report_YYYY-MM-DD_HH-MM-SS.md
 4. **Recommendations**
    - Specific remediation steps for each finding
    - Best practices for each framework
+
+## 📊 Example Output
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║          Universal Web Security Scanner v3.0                   ║
+║          Malware · Vulnerability · Configuration Audit         ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Frameworks     : WordPress, Node.js
+Risk Level     : 🟠 High Risk
+Security Grade : B (Score: 82/100)
+Total Issues   : 23
+  Critical : 2
+  High     : 8
+  Medium   : 10
+  Low      : 3
+  Info     : 0
+
+Report saved to: security-report_2026-02-19_12-00-00.md
+```
 
 ## 🛡️ Security Considerations
 
@@ -242,25 +362,6 @@ security-report_YYYY-MM-DD_HH-MM-SS.md
 - Delete old reports or archive them encrypted
 - Do not commit reports to version control
 - Review who has access to report files
-
-## 📝 Example Output
-
-```
-╔══════════════════════════════════════════════════════════════════╗
-║                       SCAN COMPLETE                            ║
-╚══════════════════════════════════════════════════════════════════╝
-
-Frameworks     : WordPress, Node.js
-Risk Level     : 🟠 High Risk
-Total Issues   : 23
-  Critical : 2
-  High     : 8
-  Medium   : 10
-  Low      : 3
-  Info     : 0
-
-Report saved to: security-report_2026-02-19_12-00-00.md
-```
 
 ## 🤝 Contributing
 
