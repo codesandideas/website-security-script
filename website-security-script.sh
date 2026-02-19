@@ -636,7 +636,11 @@ cat > "$REPORT_FILE" <<EOF
 10. [Secrets & Credential Exposure](#9-secrets--credential-exposure)
 11. [Network & Access Security](#10-network--access-security)
 12. [Recently Modified Files](#11-recently-modified-files)
-13. [Recommendations](#recommendations)
+13. [SSL/TLS Configuration](#12-ssltls-configuration)
+14. [Database Security](#13-database-security)
+15. [Container Security](#14-container-security)
+16. [Logging & Monitoring](#15-logging--monitoring)
+17. [Recommendations](#recommendations)
 
 ---
 
@@ -2039,6 +2043,480 @@ fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SECTION 12: SSL/TLS CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+log "Checking SSL/TLS configuration..."
+
+cat >> "$REPORT_FILE" <<'EOF'
+---
+
+## 12. SSL/TLS Configuration
+
+Checking SSL certificates, TLS protocol versions, cipher suites, and HTTPS enforcement.
+
+EOF
+
+# Collect server config files for SSL checks
+SSL_CONFIG_FILES=""
+for cfg in /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/apache2/apache2.conf /etc/apache2/sites-enabled/* /etc/httpd/conf/httpd.conf /etc/httpd/conf.d/*; do
+    [[ -f "$cfg" ]] 2>/dev/null && SSL_CONFIG_FILES="$SSL_CONFIG_FILES $cfg"
+done
+
+# ── 12a. Expired/Invalid Certificate ──────────────────────────────────────────
+if command -v openssl &>/dev/null; then
+    # Try to extract hostname from server config
+    SSL_HOSTNAME=""
+    if [[ -n "$SSL_CONFIG_FILES" ]]; then
+        SSL_HOSTNAME=$(grep -hEo 'server_name\s+[^;]+' $SSL_CONFIG_FILES 2>/dev/null | head -1 | awk '{print $2}' || true)
+        if [[ -z "$SSL_HOSTNAME" ]]; then
+            SSL_HOSTNAME=$(grep -hEo 'ServerName\s+\S+' $SSL_CONFIG_FILES 2>/dev/null | head -1 | awk '{print $2}' || true)
+        fi
+    fi
+
+    if [[ -n "$SSL_HOSTNAME" && "$SSL_HOSTNAME" != "localhost" && "$SSL_HOSTNAME" != "_" ]]; then
+        CERT_INFO=$(echo | $TIMEOUT_CMD openssl s_client -connect "$SSL_HOSTNAME:443" -servername "$SSL_HOSTNAME" 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || true)
+        if [[ -n "$CERT_INFO" ]]; then
+            CERT_EXPIRY=$(echo "$CERT_INFO" | grep 'notAfter=' | cut -d= -f2)
+            if [[ -n "$CERT_EXPIRY" ]]; then
+                EXPIRY_EPOCH=$(date -d "$CERT_EXPIRY" +%s 2>/dev/null || true)
+                NOW_EPOCH=$(date +%s)
+                if [[ -n "$EXPIRY_EPOCH" && "$EXPIRY_EPOCH" -lt "$NOW_EPOCH" ]]; then
+                    finding "critical" "SSL Certificate Expired" \
+                        "The SSL certificate for $SSL_HOSTNAME has expired." \
+                        "Expiry date: $CERT_EXPIRY" \
+                        "Renew the SSL certificate immediately using Let's Encrypt or your certificate provider."
+                elif [[ -n "$EXPIRY_EPOCH" ]]; then
+                    DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+                    if [[ "$DAYS_LEFT" -lt 30 ]]; then
+                        finding "high" "SSL Certificate Expiring Soon" \
+                            "The SSL certificate for $SSL_HOSTNAME expires in $DAYS_LEFT days." \
+                            "Expiry date: $CERT_EXPIRY" \
+                            "Renew the SSL certificate before it expires."
+                    else
+                        echo "✅ SSL certificate for $SSL_HOSTNAME is valid ($DAYS_LEFT days remaining)." >> "$REPORT_FILE"
+                        echo "" >> "$REPORT_FILE"
+                    fi
+                fi
+            fi
+        else
+            echo "⚠️ Could not connect to $SSL_HOSTNAME:443 to check certificate." >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+        fi
+    else
+        echo "ℹ️ No server hostname detected in config — skipping certificate expiry check." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+else
+    echo "ℹ️ openssl not installed — skipping certificate checks." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 12b. HTTP to HTTPS Redirect ───────────────────────────────────────────────
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    REDIRECT_FOUND=false
+    if grep -qEi 'return\s+301\s+https://|rewrite\s+\^.*https://.*permanent|RewriteRule.*https://%\{' $SSL_CONFIG_FILES 2>/dev/null; then
+        REDIRECT_FOUND=true
+    fi
+
+    if [[ "$REDIRECT_FOUND" != true ]]; then
+        finding "high" "Missing HTTP to HTTPS Redirect" \
+            "No HTTP to HTTPS redirect rule found in server configuration." \
+            "Checked: $SSL_CONFIG_FILES" \
+            "Add a redirect from HTTP (port 80) to HTTPS (port 443) in your server configuration."
+    else
+        echo "✅ HTTP to HTTPS redirect is configured." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+else
+    echo "ℹ️ No server configuration files found — skipping HTTPS redirect check." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 12c. Weak TLS Protocols ───────────────────────────────────────────────────
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    WEAK_TLS=$(grep -hEin 'TLSv1[^.]|TLSv1\.0|TLSv1\.1|SSLv2|SSLv3|SSLProtocol.*all' $SSL_CONFIG_FILES 2>/dev/null | grep -iv 'TLSv1\.[23]' || true)
+    if [[ -n "$WEAK_TLS" ]]; then
+        finding "high" "Weak TLS Protocols Enabled" \
+            "Server configuration allows deprecated TLS protocols (TLSv1.0, TLSv1.1, SSLv2, or SSLv3)." \
+            "$WEAK_TLS" \
+            "Disable TLS 1.0 and 1.1. Only allow TLS 1.2 and TLS 1.3."
+    else
+        echo "✅ No weak TLS protocols detected in configuration." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+fi
+
+# ── 12d. Weak Cipher Suites ───────────────────────────────────────────────────
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    WEAK_CIPHERS=$(grep -hEin 'RC4|DES|MD5|EXPORT|NULL|aNULL|eNULL' $SSL_CONFIG_FILES 2>/dev/null | grep -i 'ssl_ciphers\|SSLCipherSuite' || true)
+    if [[ -n "$WEAK_CIPHERS" ]]; then
+        finding "medium" "Weak Cipher Suites Configured" \
+            "Server configuration includes weak or insecure cipher suites (RC4, DES, MD5, EXPORT, NULL)." \
+            "$WEAK_CIPHERS" \
+            "Remove weak ciphers and use only modern, secure cipher suites."
+    else
+        echo "✅ No weak cipher suites detected in configuration." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+fi
+
+# ── 12e. Missing HSTS Header ─────────────────────────────────────────────────
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    HSTS_FOUND=$(grep -hEi 'Strict-Transport-Security|add_header.*HSTS' $SSL_CONFIG_FILES 2>/dev/null || true)
+    if [[ -z "$HSTS_FOUND" ]]; then
+        finding "medium" "Missing HSTS Header" \
+            "HTTP Strict Transport Security (HSTS) is not configured in server settings." \
+            "Checked: $SSL_CONFIG_FILES" \
+            "Add HSTS header: Strict-Transport-Security: max-age=31536000; includeSubDomains"
+    else
+        echo "✅ HSTS header is configured." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+fi
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 13: DATABASE SECURITY
+# ══════════════════════════════════════════════════════════════════════════════
+log "Checking database security..."
+
+cat >> "$REPORT_FILE" <<'EOF'
+---
+
+## 13. Database Security
+
+Checking for exposed database files, open ports, default credentials, and unencrypted connections.
+
+EOF
+
+# ── 13a. SQL Dumps in Web Root ────────────────────────────────────────────────
+log "Checking for SQL dumps in web root..."
+
+SQL_DUMPS=$(find "$SCAN_DIR" -type f \( \
+    -name "*.sql" -o -name "*.sql.gz" -o -name "*.sql.bz2" \
+    -o -name "*.dump" -o -name "*.sql.zip" -o -name "*.sqlite" \
+    -o -name "*.db" \
+    \) 2>/dev/null | \
+    grep -v "node_modules\|vendor/\|\.git/\|venv/\|__pycache__" | head -20 || true)
+
+if [[ -n "$SQL_DUMPS" ]]; then
+    finding "critical" "Database Dumps Found in Web Root" \
+        "SQL dump or database files were found in the web-accessible directory. These may contain sensitive data." \
+        "$SQL_DUMPS" \
+        "Move database dumps outside the web root immediately. Delete any unnecessary backup files."
+else
+    echo "✅ No database dump files found in web root." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 13b. Database Port Exposed ────────────────────────────────────────────────
+log "Checking for exposed database ports..."
+
+DB_PORTS_EXPOSED=""
+if command -v ss &>/dev/null; then
+    DB_PORTS_EXPOSED=$(ss -tlnp 2>/dev/null | grep -E ':(3306|5432|27017|6379|1433)\s' | grep -E '0\.0\.0\.0|::|\*' || true)
+elif command -v netstat &>/dev/null; then
+    DB_PORTS_EXPOSED=$(netstat -tlnp 2>/dev/null | grep -E ':(3306|5432|27017|6379|1433)\s' | grep -E '0\.0\.0\.0|::|\*' || true)
+fi
+
+if [[ -n "$DB_PORTS_EXPOSED" ]]; then
+    finding "critical" "Database Ports Exposed to All Interfaces" \
+        "Database services are listening on all network interfaces (0.0.0.0), making them accessible from external networks." \
+        "$DB_PORTS_EXPOSED" \
+        "Bind database services to 127.0.0.1 only. Use firewall rules to restrict access."
+else
+    echo "✅ No database ports exposed on all interfaces." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 13c. Default/Root Database Credentials ────────────────────────────────────
+log "Checking for default database credentials..."
+
+DB_CRED_ISSUES=""
+# Check common config files for root user or empty passwords
+for cfg_file in $(find "$SCAN_DIR" -maxdepth 3 -type f \( \
+    -name "wp-config.php" -o -name ".env" -o -name "settings.py" \
+    -o -name "database.yml" -o -name "database.php" -o -name "config.php" \
+    -o -name "db.php" -o -name "application.properties" \
+    \) 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | head -20); do
+
+    # Check for root user in DB config
+    ROOT_DB=$(grep -Ein "DB_USER.*root|'username'.*root|DB_USERNAME.*root|user.*=.*root" "$cfg_file" 2>/dev/null | grep -iv 'rootdir\|webroot\|docroot\|app_root' || true)
+    if [[ -n "$ROOT_DB" ]]; then
+        DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file:\n$ROOT_DB"
+    fi
+
+    # Check for empty passwords
+    EMPTY_PASS=$(grep -Ein "DB_PASSWORD\s*=\s*$|DB_PASSWORD\s*=\s*['\"]'*['\"]|'password'\s*=>\s*''|DATABASE_PASSWORD\s*=\s*$" "$cfg_file" 2>/dev/null || true)
+    if [[ -n "$EMPTY_PASS" ]]; then
+        DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file:\n$EMPTY_PASS"
+    fi
+done
+
+if [[ -n "$DB_CRED_ISSUES" ]]; then
+    finding "critical" "Default or Weak Database Credentials" \
+        "Configuration files contain root database user or empty passwords." \
+        "$(echo -e "$DB_CRED_ISSUES")" \
+        "Use a dedicated database user with limited privileges. Never use root for application connections. Set strong passwords."
+else
+    echo "✅ No default or empty database credentials detected." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 13d. Unencrypted Database Connections ─────────────────────────────────────
+log "Checking for unencrypted database connections..."
+
+DB_NO_SSL=""
+for cfg_file in $(find "$SCAN_DIR" -maxdepth 3 -type f \( \
+    -name "wp-config.php" -o -name ".env" -o -name "settings.py" \
+    -o -name "database.yml" -o -name "database.php" -o -name "config.php" \
+    -o -name "application.properties" \
+    \) 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | head -20); do
+
+    # Check if file has DB config but no SSL settings
+    HAS_DB=$(grep -Ei 'DB_HOST|DATABASE_URL|database.*host|jdbc:' "$cfg_file" 2>/dev/null || true)
+    HAS_SSL=$(grep -Ei 'DB_SSL|MYSQL_SSL|sslmode|ssl_ca|ssl_cert|require_ssl|useSSL' "$cfg_file" 2>/dev/null || true)
+
+    if [[ -n "$HAS_DB" && -z "$HAS_SSL" ]]; then
+        DB_NO_SSL="$DB_NO_SSL\n$cfg_file: Database connection configured without SSL parameters"
+    fi
+done
+
+if [[ -n "$DB_NO_SSL" ]]; then
+    finding "high" "Unencrypted Database Connections" \
+        "Database configuration files do not specify SSL/TLS encryption for database connections." \
+        "$(echo -e "$DB_NO_SSL")" \
+        "Enable SSL/TLS for database connections. Add SSL certificates and require encrypted connections."
+else
+    echo "✅ No unencrypted database connection issues detected." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 14: CONTAINER SECURITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Only run if Docker is detected
+HAS_DOCKER=false
+if command -v docker &>/dev/null || [[ -f "$SCAN_DIR/Dockerfile" ]] || [[ -f "$SCAN_DIR/docker-compose.yml" ]] || [[ -f "$SCAN_DIR/docker-compose.yaml" ]]; then
+    HAS_DOCKER=true
+fi
+
+if [[ "$HAS_DOCKER" == true ]]; then
+    log "Checking container security..."
+
+    cat >> "$REPORT_FILE" <<'EOF'
+---
+
+## 14. Container Security
+
+Checking Dockerfile best practices, Docker socket exposure, image tags, and secrets in compose files.
+
+EOF
+
+    # Find Dockerfiles and compose files
+    DOCKERFILES=$(find "$SCAN_DIR" -maxdepth 3 -type f -name "Dockerfile*" 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/" || true)
+    COMPOSE_FILES=$(find "$SCAN_DIR" -maxdepth 3 -type f \( -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yml" -o -name "compose.yaml" \) 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/" || true)
+
+    # ── 14a. Running as Root ──────────────────────────────────────────────────
+    if [[ -n "$DOCKERFILES" ]]; then
+        ROOT_CONTAINERS=""
+        while IFS= read -r df; do
+            if ! grep -q '^USER ' "$df" 2>/dev/null; then
+                ROOT_CONTAINERS="$ROOT_CONTAINERS\n$df: No USER directive found (runs as root)"
+            fi
+        done <<< "$DOCKERFILES"
+
+        if [[ -n "$ROOT_CONTAINERS" ]]; then
+            finding "high" "Containers Running as Root" \
+                "Dockerfiles without a USER directive will run processes as root inside the container." \
+                "$(echo -e "$ROOT_CONTAINERS")" \
+                "Add a USER directive to Dockerfiles to run as a non-root user."
+        else
+            echo "✅ All Dockerfiles specify a non-root USER." >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+        fi
+    fi
+
+    # ── 14b. Exposed Docker Socket ────────────────────────────────────────────
+    if [[ -e "/var/run/docker.sock" ]]; then
+        SOCK_PERMS=$(stat -c '%a' /var/run/docker.sock 2>/dev/null || true)
+        if [[ -n "$SOCK_PERMS" ]] && [[ "${SOCK_PERMS: -1}" != "0" ]]; then
+            finding "critical" "Docker Socket World-Accessible" \
+                "The Docker socket (/var/run/docker.sock) is readable by others, allowing container escape and host compromise." \
+                "Permissions: $SOCK_PERMS" \
+                "Set Docker socket permissions to 660 and restrict access to the docker group only."
+        else
+            echo "✅ Docker socket permissions are properly restricted." >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+        fi
+    fi
+
+    # Also check compose files for socket mounts
+    if [[ -n "$COMPOSE_FILES" ]]; then
+        SOCK_MOUNT=$(grep -hEn 'docker\.sock' $COMPOSE_FILES 2>/dev/null || true)
+        if [[ -n "$SOCK_MOUNT" ]]; then
+            finding "high" "Docker Socket Mounted in Container" \
+                "Docker socket is mounted into a container, which can allow container escape." \
+                "$SOCK_MOUNT" \
+                "Avoid mounting the Docker socket into containers unless absolutely necessary."
+        fi
+    fi
+
+    # ── 14c. Using :latest Tag ────────────────────────────────────────────────
+    LATEST_TAGS=""
+    if [[ -n "$DOCKERFILES" ]]; then
+        while IFS= read -r df; do
+            LATEST=$(grep -Ein '^FROM\s+\S+:latest|^FROM\s+[^:]+\s' "$df" 2>/dev/null | grep -v ':\S\+' || true)
+            EXPLICIT_LATEST=$(grep -Ein '^FROM\s+\S+:latest' "$df" 2>/dev/null || true)
+            if [[ -n "$EXPLICIT_LATEST" ]]; then
+                LATEST_TAGS="$LATEST_TAGS\n$df: $EXPLICIT_LATEST"
+            elif [[ -n "$LATEST" ]]; then
+                LATEST_TAGS="$LATEST_TAGS\n$df: FROM without explicit tag (defaults to :latest)"
+            fi
+        done <<< "$DOCKERFILES"
+    fi
+    if [[ -n "$COMPOSE_FILES" ]]; then
+        COMPOSE_LATEST=$(grep -hEn 'image:.*:latest|image:\s+[^:]+\s*$' $COMPOSE_FILES 2>/dev/null || true)
+        if [[ -n "$COMPOSE_LATEST" ]]; then
+            LATEST_TAGS="$LATEST_TAGS\n$COMPOSE_LATEST"
+        fi
+    fi
+
+    if [[ -n "$LATEST_TAGS" ]]; then
+        finding "medium" "Using :latest or Untagged Images" \
+            "Docker images using :latest tag or no tag can lead to unpredictable builds and deployments." \
+            "$(echo -e "$LATEST_TAGS")" \
+            "Pin image versions to specific tags (e.g., node:20-alpine instead of node:latest)."
+    else
+        echo "✅ All Docker images use pinned version tags." >> "$REPORT_FILE"
+        echo "" >> "$REPORT_FILE"
+    fi
+
+    # ── 14d. Secrets in Docker Compose Environment ────────────────────────────
+    if [[ -n "$COMPOSE_FILES" ]]; then
+        COMPOSE_SECRETS=""
+        while IFS= read -r cf; do
+            SECRETS=$(grep -Ein '(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY)\s*[:=]' "$cf" 2>/dev/null | grep -v '^\s*#' | grep -v '\${' || true)
+            if [[ -n "$SECRETS" ]]; then
+                COMPOSE_SECRETS="$COMPOSE_SECRETS\n$cf:\n$SECRETS"
+            fi
+        done <<< "$COMPOSE_FILES"
+
+        if [[ -n "$COMPOSE_SECRETS" ]]; then
+            finding "high" "Hardcoded Secrets in Docker Compose" \
+                "Docker Compose files contain hardcoded passwords, secrets, or API keys in environment variables." \
+                "$(echo -e "$COMPOSE_SECRETS")" \
+                "Use Docker secrets, .env files (excluded from version control), or a secrets manager instead of hardcoding credentials."
+        else
+            echo "✅ No hardcoded secrets found in Docker Compose files." >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+        fi
+    fi
+fi
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 15: LOGGING & MONITORING
+# ══════════════════════════════════════════════════════════════════════════════
+log "Checking logging and monitoring..."
+
+cat >> "$REPORT_FILE" <<'EOF'
+---
+
+## 15. Logging & Monitoring
+
+Checking access log configuration, error logging, and sensitive data exposure in logs.
+
+EOF
+
+# ── 15a. Missing Access Logs ──────────────────────────────────────────────────
+ACCESS_LOG_CONFIGURED=false
+ACCESS_LOG_MISSING=""
+
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    ACCESS_LOG_CFG=$(grep -hEi 'access_log|CustomLog' $SSL_CONFIG_FILES 2>/dev/null | grep -v '^\s*#' || true)
+    if [[ -n "$ACCESS_LOG_CFG" ]]; then
+        ACCESS_LOG_CONFIGURED=true
+        # Check if referenced log files actually exist
+        LOG_PATHS=$(echo "$ACCESS_LOG_CFG" | grep -oE '/[^ ;]+\.log' || true)
+        while IFS= read -r lp; do
+            if [[ -n "$lp" && ! -f "$lp" ]]; then
+                ACCESS_LOG_MISSING="$ACCESS_LOG_MISSING\nConfigured but missing: $lp"
+            fi
+        done <<< "$LOG_PATHS"
+    fi
+fi
+
+if [[ "$ACCESS_LOG_CONFIGURED" != true ]]; then
+    finding "medium" "No Access Log Configuration Found" \
+        "No access log directives found in server configuration files." \
+        "Searched for access_log (Nginx) and CustomLog (Apache) directives." \
+        "Configure access logging to track all HTTP requests for security monitoring and incident response."
+elif [[ -n "$ACCESS_LOG_MISSING" ]]; then
+    finding "medium" "Access Log Files Missing" \
+        "Access logging is configured but the log files do not exist." \
+        "$(echo -e "$ACCESS_LOG_MISSING")" \
+        "Ensure the log directory exists and the web server has write permissions."
+else
+    echo "✅ Access logging is configured and log files exist." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 15b. Missing Error Logging ────────────────────────────────────────────────
+ERROR_LOG_CONFIGURED=false
+
+if [[ -n "$SSL_CONFIG_FILES" ]]; then
+    ERROR_LOG_CFG=$(grep -hEi 'error_log|ErrorLog' $SSL_CONFIG_FILES 2>/dev/null | grep -v '^\s*#' || true)
+    if [[ -n "$ERROR_LOG_CFG" ]]; then
+        ERROR_LOG_CONFIGURED=true
+    fi
+fi
+
+if [[ "$ERROR_LOG_CONFIGURED" != true ]]; then
+    finding "medium" "No Error Log Configuration Found" \
+        "No error log directives found in server configuration files." \
+        "Searched for error_log (Nginx) and ErrorLog (Apache) directives." \
+        "Configure error logging to capture application errors and security events."
+else
+    echo "✅ Error logging is configured." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+# ── 15c. Sensitive Data in Logs ───────────────────────────────────────────────
+SENSITIVE_IN_LOGS=""
+LOG_FILES_TO_CHECK=""
+
+# Find recent log files
+for log_dir in /var/log/nginx /var/log/apache2 /var/log/httpd; do
+    if [[ -d "$log_dir" ]]; then
+        LOG_FILES_TO_CHECK="$LOG_FILES_TO_CHECK $(find "$log_dir" -name "*.log" -type f -mtime -7 2>/dev/null | head -5 || true)"
+    fi
+done
+
+if [[ -n "$LOG_FILES_TO_CHECK" ]]; then
+    for log_file in $LOG_FILES_TO_CHECK; do
+        # Check last 1000 lines for sensitive patterns
+        SENSITIVE=$(tail -1000 "$log_file" 2>/dev/null | grep -Ein 'password=|passwd=|token=|api_key=|secret=|credit.card|ssn=|\b[0-9]{13,16}\b' 2>/dev/null | head -5 || true)
+        if [[ -n "$SENSITIVE" ]]; then
+            SENSITIVE_IN_LOGS="$SENSITIVE_IN_LOGS\n$log_file:\n$SENSITIVE"
+        fi
+    done
+fi
+
+if [[ -n "$SENSITIVE_IN_LOGS" ]]; then
+    finding "high" "Sensitive Data Found in Log Files" \
+        "Log files contain potentially sensitive data such as passwords, tokens, or credit card numbers." \
+        "$(echo -e "$SENSITIVE_IN_LOGS")" \
+        "Sanitize log output to strip sensitive parameters. Use log filtering or redaction."
+else
+    echo "✅ No sensitive data patterns found in recent log files." >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+fi
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # EXECUTIVE SUMMARY (inserted at top)
 # ══════════════════════════════════════════════════════════════════════════════
 log "Generating executive summary..."
@@ -2115,7 +2593,7 @@ mv "$TEMP_REPORT" "$REPORT_FILE"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 12: RECOMMENDATIONS
+# SECTION 16: RECOMMENDATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 if [[ "$SHOW_RECOMMENDATIONS" == true ]]; then
 cat >> "$REPORT_FILE" <<'EOF'
