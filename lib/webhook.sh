@@ -8,14 +8,52 @@ send_webhook() {
     CLEAN_RISK=$(echo "$RISK_LEVEL" | sed 's/^[^ ]* //')
     CLEAN_GRADE=$(echo "$SECURITY_GRADE" | sed 's/[^A-F]*//g')
 
+    # Build a condensed email body with just the outline and score
+    EMAIL_SUMMARY=$(cat <<SUMMARY_EOF
+# 🛡️ Website Security Scan Report
+
+| Field | Value |
+|-------|-------|
+| **Scan Target** | \`$SCAN_DIR\` |
+| **Scan Date** | $(date '+%B %d, %Y at %H:%M:%S %Z') |
+| **Hostname** | $(hostname 2>/dev/null || echo "N/A") |
+| **Detected Framework(s)** | $FW_LIST |
+
+---
+
+## Security Grade: $SECURITY_GRADE (Score: $SECURITY_SCORE/100)
+
+## Overall Risk Level: $RISK_LEVEL
+
+| Severity | Count |
+|----------|-------|
+| 🔴 Critical | $CRITICAL |
+| 🟠 High | $HIGH |
+| 🟡 Medium | $MEDIUM |
+| 🔵 Low | $LOW |
+| ℹ️ Info | $INFO |
+| **Total Issues** | **$TOTAL_ISSUES** |
+
+---
+
+*Full details are available in the attached report.*
+SUMMARY_EOF
+)
+
     # Read report content and escape for JSON
     REPORT_CONTENT=$(cat "$REPORT_FILE")
 
     # Build JSON payload using python for safe escaping (available on most servers)
     # Falls back to basic sed escaping if python is not available
+    # Write email summary to temp file for safe passing to python
+    EMAIL_SUMMARY_FILE="$TEMP_DIR/email_summary.txt"
+    echo "$EMAIL_SUMMARY" > "$EMAIL_SUMMARY_FILE"
+
     if command -v python3 &>/dev/null; then
         JSON_PAYLOAD=$(python3 -c "
 import json, sys
+with open(sys.argv[15], 'r') as f:
+    email_summary = f.read()
 data = {
     'api_key': sys.argv[1],
     'email': sys.argv[2],
@@ -31,16 +69,20 @@ data = {
     'medium': int(sys.argv[12]),
     'low': int(sys.argv[13]),
     'info': int(sys.argv[14]),
+    'email_summary': email_summary,
     'report': sys.stdin.read()
 }
 print(json.dumps(data))
 " "$API_KEY" "$NOTIFY_EMAIL" "$(hostname 2>/dev/null || echo unknown)" "$SCAN_DIR" \
   "$FW_LIST" "$CLEAN_RISK" "$SECURITY_GRADE" "$SECURITY_SCORE" \
   "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
+  "$EMAIL_SUMMARY_FILE" \
   < "$REPORT_FILE")
     elif command -v python &>/dev/null; then
         JSON_PAYLOAD=$(python -c "
 import json, sys
+with open(sys.argv[15], 'r') as f:
+    email_summary = f.read()
 data = {
     'api_key': sys.argv[1],
     'email': sys.argv[2],
@@ -56,16 +98,20 @@ data = {
     'medium': int(sys.argv[12]),
     'low': int(sys.argv[13]),
     'info': int(sys.argv[14]),
+    'email_summary': email_summary,
     'report': sys.stdin.read()
 }
 print(json.dumps(data))
 " "$API_KEY" "$NOTIFY_EMAIL" "$(hostname 2>/dev/null || echo unknown)" "$SCAN_DIR" \
   "$FW_LIST" "$CLEAN_RISK" "$SECURITY_GRADE" "$SECURITY_SCORE" \
   "$TOTAL_ISSUES" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$INFO" \
+  "$EMAIL_SUMMARY_FILE" \
   < "$REPORT_FILE")
     else
         # Fallback: basic JSON escaping with sed
         ESCAPED_REPORT=$(cat "$REPORT_FILE" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | \
+            awk '{printf "%s\\n", $0}')
+        ESCAPED_SUMMARY=$(echo "$EMAIL_SUMMARY" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | \
             awk '{printf "%s\\n", $0}')
         JSON_PAYLOAD=$(cat <<JSONEOF
 {
@@ -83,6 +129,7 @@ print(json.dumps(data))
   "medium": $MEDIUM,
   "low": $LOW,
   "info": $INFO,
+  "email_summary": "$ESCAPED_SUMMARY",
   "report": "$ESCAPED_REPORT"
 }
 JSONEOF
