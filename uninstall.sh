@@ -9,6 +9,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 INSTALL_PATH="/usr/local/bin/webscan"
+LIB_DIR="/usr/local/lib/webscan"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}[ERROR]${NC} This uninstaller must be run as root (use sudo)"
@@ -24,6 +25,11 @@ if [[ -f "$INSTALL_PATH" ]]; then
     echo -e "${GREEN}[OK]${NC} Removed ${INSTALL_PATH}"
 else
     echo -e "${YELLOW}[WARN]${NC} ${INSTALL_PATH} not found - already uninstalled?"
+fi
+
+if [[ -d "$LIB_DIR" ]]; then
+    rm -rf "$LIB_DIR"
+    echo -e "${GREEN}[OK]${NC} Removed ${LIB_DIR}"
 fi
 
 if [[ -d "$CONFIG_DIR" ]]; then

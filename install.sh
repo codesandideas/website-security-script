@@ -14,10 +14,12 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 INSTALL_DIR="/usr/local/bin"
+LIB_INSTALL_DIR="/usr/local/lib/webscan"
 SCRIPT_NAME="webscan"
 CONFIG_DIR="${HOME}/.config/webscan"
 CONFIG_FILE="${CONFIG_DIR}/config"
-SOURCE_SCRIPT="$(cd "$(dirname "$0")" && pwd)/website-security-script.sh"
+SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
+SOURCE_SCRIPT="${SOURCE_DIR}/website-security-script.sh"
 
 info()  { echo -e "${CYAN}[INFO]${NC} $1"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -48,11 +50,22 @@ echo -e "${BOLD}║       Universal Web Security Scanner - Installer     ║${NC
 echo -e "${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Install the script ───────────────────────────────────────────────────────
+# ── Install the script and modules ───────────────────────────────────────────
 info "Installing webscan to ${INSTALL_DIR}/${SCRIPT_NAME}..."
 cp "$SOURCE_SCRIPT" "${INSTALL_DIR}/${SCRIPT_NAME}"
 chmod 755 "${INSTALL_DIR}/${SCRIPT_NAME}"
 ok "Installed to ${INSTALL_DIR}/${SCRIPT_NAME}"
+
+info "Installing lib/ and scans/ modules to ${LIB_INSTALL_DIR}..."
+mkdir -p "${LIB_INSTALL_DIR}"
+cp -r "${SOURCE_DIR}/lib" "${LIB_INSTALL_DIR}/"
+cp -r "${SOURCE_DIR}/scans" "${LIB_INSTALL_DIR}/"
+chmod -R 755 "${LIB_INSTALL_DIR}"
+ok "Modules installed to ${LIB_INSTALL_DIR}"
+
+# Patch installed script to use LIB_INSTALL_DIR instead of SCRIPT_DIR
+sed -i "s|^SCRIPT_DIR=.*|SCRIPT_DIR=\"${LIB_INSTALL_DIR}\"|" "${INSTALL_DIR}/${SCRIPT_NAME}"
+ok "Script configured to use installed modules"
 
 # ── Create default config if it doesn't exist ───────────────────────────────
 if [[ ! -f "$CONFIG_FILE" ]]; then
