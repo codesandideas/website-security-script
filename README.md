@@ -139,6 +139,7 @@ Scan Options:
   --api-key <key>           API key for webhook authentication
   --email <address>         Recipient email for this scan
   --no-email                Skip email notification for this scan
+  --no-recommendations      Hide recommendations section from report
   --background              Run scan in background (survives terminal close)
   --cron <schedule>         Set up a cron job for recurring scans
                             Shortcuts: hourly, daily, weekly, monthly
