@@ -28,7 +28,7 @@ API_KEY=""
 NOTIFY_EMAIL=""
 EMAIL_ENABLED=false
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
-REPORT_FILE="security-report_${TIMESTAMP}.md"
+REPORT_FILE=""
 TEMP_DIR=$(mktemp -d)
 TOTAL_ISSUES=0
 CRITICAL=0
@@ -513,6 +513,7 @@ if [[ ! -d "$SCAN_DIR" ]]; then
 fi
 
 SCAN_DIR=$(cd "$SCAN_DIR" && pwd)
+REPORT_FILE="${SCAN_DIR}/security-report_${TIMESTAMP}.md"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
@@ -2810,5 +2811,5 @@ log "Total Issues   : $TOTAL_ISSUES"
 echo ""
 log "Scan Duration  : ${DURATION_MIN}m ${DURATION_SEC}s"
 log "Files Scanned  : $(wc -l < "$FILE_LIST" 2>/dev/null || echo 0)"
-log "Report saved to: $(pwd)/$REPORT_FILE"
+log "Report saved to: $REPORT_FILE"
 echo ""
