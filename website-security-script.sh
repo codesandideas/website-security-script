@@ -35,6 +35,13 @@ MEDIUM=0
 LOW=0
 INFO=0
 
+# ── Scan Configuration ─────────────────────────────────────────────────────────
+EXCLUDE_PATTERN='node_modules|vendor/|\.git/|venv/|__pycache__|dist/|build/|\.next/|cache/|\.svn/|\.hg/'
+MAX_FILE_SIZE="10M"  # Skip files larger than 10MB
+TIMEOUT_CMD="timeout 30"  # Prevent hanging on slow operations
+SCAN_TIMEOUT=300  # Maximum total scan duration in seconds
+FILE_LIST=""  # Will be set after temp dir creation
+
 # ── Argument Parsing ────────────────────────────────────────────────────────
 show_usage() {
     echo "Usage: sudo bash $0 <path> [options]"
@@ -75,8 +82,57 @@ SCAN_DIR="${SCAN_DIR:-.}"
 declare -a FRAMEWORKS=()
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
-cleanup() { rm -rf "$TEMP_DIR"; }
+INTERRUPTED=false
+cleanup() { 
+    [[ -f "$FILE_LIST" ]] && rm -f "$FILE_LIST"
+    rm -rf "$TEMP_DIR"
+    if [[ "$INTERRUPTED" == true ]]; then
+        err "Scan interrupted by user"
+        exit 130
+    fi
+}
+trap 'INTERRUPTED=true; cleanup' INT TERM
 trap cleanup EXIT
+
+# ── File List Cache ───────────────────────────────────────────────────────────
+build_file_list() {
+    log "Building file index..."
+    FILE_LIST="$TEMP_DIR/all_files.txt"
+    find "$SCAN_DIR" -type f -size -"$MAX_FILE_SIZE" 2>/dev/null | \
+        grep -vE "$EXCLUDE_PATTERN" > "$FILE_LIST" || true
+    local count=$(wc -l < "$FILE_LIST" 2>/dev/null || echo 0)
+    log "Indexed $count files for scanning"
+}
+
+# ── Helper Functions ──────────────────────────────────────────────────────────
+exclude_noise() { grep -vE "$EXCLUDE_PATTERN"; }
+
+get_file_size() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        stat -f%z "$1" 2>/dev/null || echo 0
+    else
+        stat -c%s "$1" 2>/dev/null || echo 0
+    fi
+}
+
+safe_grep() {
+    local pattern="$1"
+    shift
+    $TIMEOUT_CMD grep -rnEi "$pattern" "$@" 2>/dev/null | exclude_noise | head -100 || true
+}
+
+safe_find() {
+    local dir="$1"
+    shift
+    if [[ -f "$FILE_LIST" ]]; then
+        # Use cached file list and filter by pattern
+        cat "$FILE_LIST" | while read -r file; do
+            [[ -f "$file" ]] && "$@" "$file" 2>/dev/null
+        done | exclude_noise | head -100 || true
+    else
+        $TIMEOUT_CMD find "$dir" "$@" 2>/dev/null | exclude_noise | head -100 || true
+    fi
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 log()  { echo -e "${CYAN}[*]${NC} $1"; }
@@ -233,9 +289,25 @@ find "$SCAN_DIR" -maxdepth 3 -name "*.js" -type f 2>/dev/null | head -1 | grep -
 find "$SCAN_DIR" -maxdepth 3 -name "*.py" -type f 2>/dev/null | head -1 | grep -q . && HAS_PYTHON=true
 find "$SCAN_DIR" -maxdepth 3 -name "*.rb" -type f 2>/dev/null | head -1 | grep -q . && HAS_RUBY=true
 
+# Build file list cache for faster scanning
+build_file_list
+
 # ══════════════════════════════════════════════════════════════════════════════
 # INITIALIZE REPORT
 # ══════════════════════════════════════════════════════════════════════════════
+# Start timer for scan duration
+SCAN_START_TIME=$(date +%s)
+
+# Check for scan timeout
+check_timeout() {
+    local current_time=$(date +%s)
+    local elapsed=$((current_time - SCAN_START_TIME))
+    if [[ $elapsed -gt $SCAN_TIMEOUT ]]; then
+        err "Scan timeout reached ($SCAN_TIMEOUT seconds)"
+        return 1
+    fi
+    return 0
+}
 FW_LIST=$(IFS=', '; echo "${FRAMEWORKS[*]}")
 
 cat > "$REPORT_FILE" <<EOF
@@ -1893,6 +1965,12 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 # FINAL OUTPUT
 # ══════════════════════════════════════════════════════════════════════════════
+# Calculate scan duration
+SCAN_END_TIME=$(date +%s)
+SCAN_DURATION=$((SCAN_END_TIME - SCAN_START_TIME))
+DURATION_MIN=$((SCAN_DURATION / 60))
+DURATION_SEC=$((SCAN_DURATION % 60))
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
 echo "║                       SCAN COMPLETE                            ║"
@@ -1907,5 +1985,7 @@ log "Total Issues   : $TOTAL_ISSUES"
 [[ "$LOW" -gt 0 ]]      && ok "  Low      : $LOW"
 [[ "$INFO" -gt 0 ]]     && ok "  Info     : $INFO"
 echo ""
+log "Scan Duration  : ${DURATION_MIN}m ${DURATION_SEC}s"
+log "Files Scanned  : $(wc -l < "$FILE_LIST" 2>/dev/null || echo 0)"
 log "Report saved to: $(pwd)/$REPORT_FILE"
 echo ""
