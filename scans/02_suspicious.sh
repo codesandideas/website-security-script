@@ -77,7 +77,7 @@ EOF
     # When WP active, also check for upload.php outside wp-admin
     if is_wp_allowlist_active; then
         WP_UPLOAD_HITS=$(find "$SCAN_DIR" -type f -name "upload.php" 2>/dev/null \
-            | grep -v "node_modules\|vendor/\|\.git/\|test\|wp-admin/" | head -10 || true)
+            | grep -v "node_modules\|vendor/\|\.git/\|test\|wp-admin/\|plugins/elementor/" | head -10 || true)
         [[ -n "$WP_UPLOAD_HITS" ]] && SUSPICIOUS_NAMES+="$WP_UPLOAD_HITS"$'\n'
     fi
 
