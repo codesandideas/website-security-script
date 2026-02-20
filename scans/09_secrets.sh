@@ -28,7 +28,7 @@ EOF
     FOUND_SENSITIVE=""
     for P in "${SENSITIVE_PATTERNS[@]}"; do
         MATCHES=$(find "$SCAN_DIR" -maxdepth 3 -name "$P" -type f 2>/dev/null | \
-            grep -v "node_modules\|vendor/\|venv/" || true)
+            grep -v "node_modules\|vendor/\|venv/\|\.env\.example\|\.env\.sample" || true)
         while IFS= read -r F; do
             [[ -z "$F" ]] && continue
             FSIZE=$(stat -c%s "$F" 2>/dev/null || echo "?")
@@ -65,7 +65,7 @@ EOF
         --include="*.php" --include="*.py" --include="*.js" --include="*.ts" \
         --include="*.rb" --include="*.yml" --include="*.yaml" --include="*.json" \
         --include="*.conf" --include="*.cfg" --include="*.ini" \
-        2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/\|dist/\|\.example\|\.sample\|\.md\|test" | head -30 || true)
+        2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/\|dist/\|\.example\|\.sample\|\.md\|test\|composer\.json\|package\.json\|package-lock\.json" | filter_results | head -30 || true)
 
     if [[ -n "$CRED_RESULTS" ]]; then
         finding "critical" "Hardcoded Credentials or API Keys" \

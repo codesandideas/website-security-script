@@ -79,11 +79,58 @@ filter_allowlist() {
     grep -vE "$ignore_regex"
 }
 
+# Filter out Laravel/PHP framework core boilerplate files (pipe function)
+filter_laravel_core() {
+    if ! has_framework "laravel" 2>/dev/null; then
+        cat
+        return
+    fi
+
+    local laravel_patterns=(
+        'bootstrap/cache/'
+        'bootstrap/app\.php'
+        'config/[a-z]+\.php'
+        'routes/web\.php'
+        'routes/api\.php'
+        'routes/console\.php'
+        'routes/channels\.php'
+        'app/Http/Kernel\.php'
+        'app/Http/Controllers/Controller\.php'
+        'app/Providers/[A-Za-z]+ServiceProvider\.php'
+        'public/index\.php'
+        'server\.php'
+        'artisan'
+        'database/migrations/'
+        'database/seeders/'
+        'database/factories/'
+        'resources/views/welcome\.blade\.php'
+    )
+
+    local pattern
+    pattern=$(IFS='|'; echo "${laravel_patterns[*]}")
+    grep -vE "$pattern"
+}
+
+# Filter out generic PHP framework boilerplate (tiny index.php bootstrappers)
+filter_php_core() {
+    while IFS= read -r line; do
+        # Extract file path (first field before ':' if grep -n output, or whole line if file list)
+        local filepath
+        filepath=$(echo "$line" | cut -d: -f1)
+        # Skip tiny index.php files (≤5 lines) that are just bootstrappers
+        if [[ "$filepath" == *"/index.php" || "$filepath" == *"index.php" ]] && \
+           [[ -f "$filepath" ]] && [[ $(wc -l < "$filepath" 2>/dev/null || echo 999) -le 5 ]]; then
+            continue
+        fi
+        echo "$line"
+    done
+}
+
 # Combined filter: applies all active filters to scan results
 filter_results() {
     if [[ "$USE_ALLOWLIST" != true ]]; then
         cat
         return
     fi
-    filter_wp_verified | filter_allowlist
+    filter_wp_verified | filter_laravel_core | filter_allowlist
 }

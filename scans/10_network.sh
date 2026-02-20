@@ -35,7 +35,7 @@ EOF
     # CORS wildcard
     CORS_WILDCARD=$(grep -rnEi 'Access-Control-Allow-Origin.*\*|cors.*origin.*\*' \
         "$SCAN_DIR" --include="*.php" --include="*.js" --include="*.py" --include="*.conf" \
-        2>/dev/null | grep -v "node_modules\|vendor/\|\.git/" | head -10 || true)
+        2>/dev/null | grep -v "node_modules\|vendor/\|\.git/" | filter_results | head -10 || true)
 
     if [[ -n "$CORS_WILDCARD" ]]; then
         finding "medium" "CORS Wildcard (*) Detected" \
