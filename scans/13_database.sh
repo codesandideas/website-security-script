@@ -103,7 +103,15 @@ EOF
         HAS_SSL=$(grep -Ei 'DB_SSL|MYSQL_SSL|sslmode|ssl_ca|ssl_cert|require_ssl|useSSL' "$cfg_file" 2>/dev/null || true)
 
         if [[ -n "$HAS_DB" && -z "$HAS_SSL" ]]; then
-            DB_NO_SSL="$DB_NO_SSL\n$cfg_file: Database connection configured without SSL parameters"
+            # Skip if DB host is localhost/127.0.0.1/::1 — uses Unix socket, no network exposure
+            IS_LOCAL=$(grep -Ei 'DB_HOST\s*=\s*["\x27]?(localhost|127\.0\.0\.1|::1)["\x27]?' "$cfg_file" 2>/dev/null || true)
+            if [[ -z "$IS_LOCAL" ]]; then
+                # Also check DATABASE_URL for localhost
+                IS_LOCAL_URL=$(grep -Ei 'DATABASE_URL.*@(localhost|127\.0\.0\.1|::1)[:/]' "$cfg_file" 2>/dev/null || true)
+            fi
+            if [[ -z "$IS_LOCAL" && -z "$IS_LOCAL_URL" ]]; then
+                DB_NO_SSL="$DB_NO_SSL\n$cfg_file: Database connection configured without SSL parameters"
+            fi
         fi
     done
 
