@@ -104,11 +104,21 @@ generate_summary() {
         RISK_DESC="No significant issues detected. Continue monitoring and keep everything updated."
     fi
 
+    # Build visual score bar
+    local filled=$((SECURITY_SCORE / 5))
+    local empty=$((20 - filled))
+    local bar=""
+    local j
+    for ((j=0; j<filled; j++)); do bar+="█"; done
+    for ((j=0; j<empty; j++)); do bar+="░"; done
+
     SUMMARY=$(cat <<EOF
 
 ## Executive Summary
 
 ### Security Grade: $GRADE_EMOJI **$SECURITY_GRADE** (Score: $SECURITY_SCORE/100)
+
+\`$bar\` $SECURITY_SCORE%
 
 $GRADE_DESC
 
@@ -116,14 +126,14 @@ $GRADE_DESC
 
 $RISK_DESC
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | $CRITICAL |
-| 🟠 High | $HIGH |
-| 🟡 Medium | $MEDIUM |
-| 🔵 Low | $LOW |
-| ℹ️ Info | $INFO |
-| **Total Issues** | **$TOTAL_ISSUES** |
+| Severity | Count | Impact |
+|----------|-------|--------|
+| 🔴 Critical | $CRITICAL | -25 pts (first), -20 (second), -15 (each after) |
+| 🟠 High | $HIGH | -15 pts (first), -12 (second), -10 (each after) |
+| 🟡 Medium | $MEDIUM | -5 pts each (max -30) |
+| 🔵 Low | $LOW | -2 pts each (max -15) |
+| ℹ️ Info | $INFO | 0 pts |
+| **Total Issues** | **$TOTAL_ISSUES** | |
 
 **Frameworks Detected:** $FW_LIST
 
@@ -133,14 +143,17 @@ $RISK_DESC
 
 | Grade | Score Range | Description |
 |-------|-------------|-------------|
-| **A** | 90-100 | Excellent - Strong security posture |
-| **B** | 80-89 | Good - Minor improvements needed |
-| **C** | 70-79 | Fair - Notable vulnerabilities present |
-| **D** | 60-69 | Poor - Significant risks require attention |
-| **E** | 50-59 | Critical - Severe vulnerabilities |
-| **F** | 0-49 | Failed - Critical compromise likely |
+| **A+** | 97-100 | Outstanding - Exemplary security posture |
+| **A / A-** | 90-96 | Excellent - Strong security posture |
+| **B+/B/B-** | 80-89 | Good - Minor improvements needed |
+| **C+/C/C-** | 70-79 | Fair - Notable vulnerabilities present |
+| **D+/D** | 60-69 | Poor - Significant risks require attention |
+| **D-** | 50-59 | Critical - Severe vulnerabilities |
+| **F** | 35-49 | Failed - Critical compromise likely |
+| **F-** | 0-34 | Severely compromised - Assume breach |
 
-*Scoring: Critical (-25), High (-15), Medium (-5), Low (-2), Info (0)*
+*Deductions use diminishing returns: repeated issues of the same severity have reduced impact.*
+*Medium and Low severity deductions are capped to prevent score collapse from minor issues alone.*
 
 EOF
 )
@@ -237,12 +250,26 @@ final_output() {
     DURATION_MIN=$((SCAN_DURATION / 60))
     DURATION_SEC=$((SCAN_DURATION % 60))
 
+    # Build terminal score bar with color
+    local filled=$((SECURITY_SCORE / 5))
+    local empty=$((20 - filled))
+    local bar_color=""
+    if [[ $SECURITY_SCORE -ge 80 ]]; then bar_color="$GREEN"
+    elif [[ $SECURITY_SCORE -ge 60 ]]; then bar_color="$YELLOW"
+    else bar_color="$RED"
+    fi
+    local bar_filled="" bar_empty=""
+    local j
+    for ((j=0; j<filled; j++)); do bar_filled+="█"; done
+    for ((j=0; j<empty; j++)); do bar_empty+="░"; done
+
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
     echo "║                       SCAN COMPLETE                            ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
     log "Security Grade : $GRADE_EMOJI $SECURITY_GRADE (Score: $SECURITY_SCORE/100)"
+    echo -e "                 ${bar_color}${bar_filled}${NC}${bar_empty} ${SECURITY_SCORE}%"
     log "Frameworks     : $FW_LIST"
     log "Risk Level     : $RISK_LEVEL"
     log "Total Issues   : $TOTAL_ISSUES"

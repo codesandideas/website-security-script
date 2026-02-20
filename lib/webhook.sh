@@ -6,7 +6,7 @@ send_webhook() {
 
     # Clean risk level and grade (remove emoji)
     CLEAN_RISK=$(echo "$RISK_LEVEL" | sed 's/^[^ ]* //')
-    CLEAN_GRADE=$(echo "$SECURITY_GRADE" | sed 's/[^A-F]*//g')
+    CLEAN_GRADE=$(echo "$SECURITY_GRADE" | sed 's/[^A-F+\-]//g')
 
     # Build a condensed email body with just the outline and score
     EMAIL_SUMMARY=$(cat <<SUMMARY_EOF
