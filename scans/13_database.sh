@@ -39,9 +39,10 @@ EOF
 
     DB_PORTS_EXPOSED=""
     if command -v ss &>/dev/null; then
-        DB_PORTS_EXPOSED=$(ss -tlnp 2>/dev/null | grep -E ':(3306|5432|27017|6379|1433)\s' | grep -E '0\.0\.0\.0|::|\*' || true)
+        # Use awk to check only the local address column (4th field) for wildcard bindings
+        DB_PORTS_EXPOSED=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:(3306|5432|27017|6379|1433)$/ && $4 ~ /^(0\.0\.0\.0|\*|::|\[::\])/' || true)
     elif command -v netstat &>/dev/null; then
-        DB_PORTS_EXPOSED=$(netstat -tlnp 2>/dev/null | grep -E ':(3306|5432|27017|6379|1433)\s' | grep -E '0\.0\.0\.0|::|\*' || true)
+        DB_PORTS_EXPOSED=$(netstat -tlnp 2>/dev/null | awk '$4 ~ /:(3306|5432|27017|6379|1433)$/ && $4 ~ /^(0\.0\.0\.0|\*|::)/' || true)
     fi
 
     if [[ -n "$DB_PORTS_EXPOSED" ]]; then
