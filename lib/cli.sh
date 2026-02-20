@@ -9,7 +9,8 @@ show_usage() {
     echo "  <path>                    Path to the website root directory"
     echo ""
     echo "Scan Options:"
-    echo "  --webhook <url>           Send report to a webhook endpoint via POST"
+    echo "  --url <url>               Base URL of the site for HTTP accessibility checks (e.g. https://example.com)
+  --webhook <url>           Send report to a webhook endpoint via POST"
     echo "  --api-key <key>           API key for webhook authentication"
     echo "  --email <address>         Recipient email for this scan"
     echo "  --no-email                Skip email notification for this scan"
@@ -49,6 +50,7 @@ show_usage() {
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --url)           SITE_URL="$2"; shift 2 ;;
             --webhook)       WEBHOOK_URL="$2"; shift 2 ;;
             --api-key)       API_KEY="$2"; shift 2 ;;
             --email)         NOTIFY_EMAIL="$2"; EMAIL_ENABLED=true; shift 2 ;;
