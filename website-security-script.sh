@@ -22,6 +22,8 @@ source "$SCRIPT_DIR/lib/helpers.sh"
 source "$SCRIPT_DIR/lib/cron.sh"
 source "$SCRIPT_DIR/lib/cli.sh"
 source "$SCRIPT_DIR/lib/framework.sh"
+source "$SCRIPT_DIR/lib/wp_integrity.sh"
+source "$SCRIPT_DIR/lib/allowlist.sh"
 source "$SCRIPT_DIR/lib/report.sh"
 source "$SCRIPT_DIR/lib/webhook.sh"
 

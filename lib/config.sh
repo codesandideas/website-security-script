@@ -52,6 +52,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
             SCAN_TIMEOUT)    SCAN_TIMEOUT="$value" ;;
             SHOW_RECOMMENDATIONS) SHOW_RECOMMENDATIONS="$value" ;;
             MAX_PARALLEL) MAX_PARALLEL="$value" ;;
+            USE_ALLOWLIST) USE_ALLOWLIST="$value" ;;
         esac
     done < "$CONFIG_FILE"
 fi

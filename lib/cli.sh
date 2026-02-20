@@ -14,6 +14,7 @@ show_usage() {
     echo "  --email <address>         Recipient email for this scan"
     echo "  --no-email                Skip email notification for this scan"
     echo "  --no-recommendations      Hide recommendations section from report"
+    echo "  --no-allowlist            Disable built-in allowlisting (scan everything)"
     echo "  --background              Run scan in background (survives terminal close)"
     echo "  --cron <schedule>         Set up a cron job for recurring scans"
     echo "                            Shortcuts: hourly, daily, weekly, monthly"
@@ -53,6 +54,7 @@ parse_args() {
             --email)         NOTIFY_EMAIL="$2"; EMAIL_ENABLED=true; shift 2 ;;
             --no-email)      NO_EMAIL=true; shift ;;
             --no-recommendations) SHOW_RECOMMENDATIONS=false; shift ;;
+            --no-allowlist)      USE_ALLOWLIST=false; shift ;;
             --background)    BACKGROUND=true; shift ;;
             --cron)          CRON_SCHEDULE="$2"; shift 2 ;;
             --list-cron)     cron_list ;;
@@ -103,6 +105,7 @@ parse_args() {
         [[ -n "$NOTIFY_EMAIL" ]] && EXTRA_ARGS+=" --email $NOTIFY_EMAIL"
         [[ "$NO_EMAIL" == true ]] && EXTRA_ARGS+=" --no-email"
         [[ "$SHOW_RECOMMENDATIONS" == false ]] && EXTRA_ARGS+=" --no-recommendations"
+        [[ "$USE_ALLOWLIST" == false ]] && EXTRA_ARGS+=" --no-allowlist"
         cron_add "$CRON_SCHEDULE" "$SCAN_DIR" $EXTRA_ARGS
     fi
 
@@ -122,6 +125,7 @@ parse_args() {
         [[ -n "$NOTIFY_EMAIL" ]] && BG_ARGS+=(--email "$NOTIFY_EMAIL")
         [[ "$NO_EMAIL" == true ]] && BG_ARGS+=(--no-email)
         [[ "$SHOW_RECOMMENDATIONS" == false ]] && BG_ARGS+=(--no-recommendations)
+        [[ "$USE_ALLOWLIST" == false ]] && BG_ARGS+=(--no-allowlist)
 
         echo ""
         echo -e "${GREEN}[OK]${NC} Scan launched in background!"

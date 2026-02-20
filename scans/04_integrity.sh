@@ -19,7 +19,7 @@ EOF
         -name "*.php" -o -name "*.js" -o -name "*.py" -o -name "*.rb" \
         -o -name "*.pl" -o -name "*.cgi" -o -name "*.sh" \
         \) -ctime -7 2>/dev/null | \
-        grep -v "node_modules\|vendor/\|\.git/\|cache\|venv/\|__pycache__\|dist/\|build/" | head -50 || true)
+        grep -v "node_modules\|vendor/\|\.git/\|cache\|venv/\|__pycache__\|dist/\|build/" | filter_results | head -50 || true)
 
     if [[ -n "$RECENT_EXEC" ]]; then
         finding "medium" "Executable Files Created/Changed in Last 7 Days" \

@@ -40,6 +40,45 @@ EOF
             fi
         fi
 
+        # ── WordPress Integrity Check Results ──
+        if [[ "${WP_INTEGRITY_AVAILABLE:-false}" == true ]]; then
+            echo "#### Core File Integrity" >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+
+            local v_count m_count e_count
+            v_count=$(wc -l < "$TEMP_DIR/wp_verified.txt" 2>/dev/null | tr -d ' ')
+            m_count=$(wc -l < "$TEMP_DIR/wp_modified.txt" 2>/dev/null | tr -d ' ')
+            e_count=$(wc -l < "$TEMP_DIR/wp_extra.txt" 2>/dev/null | tr -d ' ')
+
+            echo "Verified against official WordPress checksums: **$v_count** files matched, **$m_count** modified, **$e_count** extra files in core directories." >> "$REPORT_FILE"
+            echo "" >> "$REPORT_FILE"
+
+            # Modified core files = CRITICAL
+            if [[ "$m_count" -gt 0 ]]; then
+                local modified_list
+                modified_list=$(cat "$TEMP_DIR/wp_modified.txt" 2>/dev/null | head -50)
+                finding "critical" "Modified WordPress Core/Plugin/Theme Files ($m_count files)" \
+                    "The following files differ from their official checksums. They may have been tampered with or backdoored." \
+                    "$modified_list" \
+                    "Compare each file against the official WordPress release. Replace modified core files with clean copies from wordpress.org."
+            fi
+
+            # Extra files in core directories = HIGH
+            if [[ "$e_count" -gt 0 ]]; then
+                local extra_list
+                extra_list=$(cat "$TEMP_DIR/wp_extra.txt" 2>/dev/null | head -50)
+                finding "high" "Extra Files in WordPress Core Directories ($e_count files)" \
+                    "These files exist in wp-admin/ or wp-includes/ but are not part of the official WordPress release. They may be backdoors or leftover from a compromise." \
+                    "$extra_list" \
+                    "Review each file. Remove any that are not legitimate customizations or known additions."
+            fi
+
+            if [[ "$m_count" -eq 0 && "$e_count" -eq 0 ]]; then
+                echo "✅ All WordPress core files match official checksums." >> "$REPORT_FILE"
+                echo "" >> "$REPORT_FILE"
+            fi
+        fi
+
         if [[ -f "$WP_CONFIG" ]]; then
             # Debug mode
             if grep -qEi "define\s*\(\s*['\"]WP_DEBUG['\"]\s*,\s*true" "$WP_CONFIG" 2>/dev/null; then

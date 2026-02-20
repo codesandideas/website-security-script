@@ -17,7 +17,7 @@ EOF
         -o -name "*.html" -o -name "*.sh" \
         \) -mtime -3 2>/dev/null | \
         grep -v "node_modules\|vendor/\|\.git/\|cache\|venv/\|__pycache__\|dist/\|build/\|\.next/" | \
-        sort | head -50 || true)
+        filter_results | sort | head -50 || true)
 
     if [[ -n "$RECENT_MODIFIED" ]]; then
         echo "Files modified in the last 3 days:" >> "$REPORT_FILE"

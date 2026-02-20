@@ -32,6 +32,10 @@ EOF
             -o -name "*.py" -o -name "*.pl" -o -name "*.cgi" -o -name "*.sh" \
             -o -name "*.jsp" -o -name "*.asp" -o -name "*.aspx" \
             \) 2>/dev/null || true)
+        # In WordPress, exclude index.php (anti-directory-listing protection)
+        if is_wp_allowlist_active && [[ -n "$FOUND" ]]; then
+            FOUND=$(echo "$FOUND" | grep -v '/index\.php$' || true)
+        fi
         [[ -n "$FOUND" ]] && UPLOADS_EXEC+="$FOUND"$'\n'
     done
 
@@ -46,20 +50,36 @@ EOF
     fi
 
     # ── 2b. Suspicious filenames (universal) ─────────────────────────────────────
-    SUSPICIOUS_NAMES=$(find "$SCAN_DIR" -type f \( \
-        -name "*.php.suspected" -o -name "*.php.bak" -o -name "*.php.old" \
-        -o -name "*.php.swp" -o -name "*.py.bak" -o -name "*.js.bak" \
-        -o -name "shell*.php" -o -name "cmd.php" -o -name "cmd*.php" \
-        -o -name "cpanel.php" -o -name "sql.php" -o -name "ssh.php" \
-        -o -name "upload.php" -o -name "uploader.php" -o -name "filemanager.php" \
-        -o -name "adminer.php" -o -name "phpmyadmin.php" \
-        -o -name "wp-vcd.php" -o -name "class.theme-modules.php" \
-        -o -name "satan*.php" -o -name "vuln.php" -o -name "hack*.php" \
-        -o -name "mailer.php" -o -name "leafmailer.php" \
-        -o -name "fox.php" -o -name "lock360.php" -o -name "radio.php" \
-        -o -name "*.suspected" -o -name "0*.php" \
-        -o -iname "*backdoor*" -o -iname "*exploit*" -o -iname "*rootkit*" \
-        \) 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|test" | head -50 || true)
+    # Build suspicious filename find command (WP-aware)
+    SUSP_FIND_ARGS=(
+        -name "*.php.suspected" -o -name "*.php.bak" -o -name "*.php.old"
+        -o -name "*.php.swp" -o -name "*.py.bak" -o -name "*.js.bak"
+        -o -name "shell*.php" -o -name "cmd.php" -o -name "cmd*.php"
+        -o -name "cpanel.php" -o -name "sql.php" -o -name "ssh.php"
+        -o -name "uploader.php" -o -name "filemanager.php"
+        -o -name "adminer.php" -o -name "phpmyadmin.php"
+        -o -name "wp-vcd.php" -o -name "class.theme-modules.php"
+        -o -name "satan*.php" -o -name "vuln.php" -o -name "hack*.php"
+        -o -name "mailer.php" -o -name "leafmailer.php"
+        -o -name "fox.php" -o -name "lock360.php" -o -name "radio.php"
+        -o -name "*.suspected"
+        -o -iname "*backdoor*" -o -iname "*exploit*" -o -iname "*rootkit*"
+    )
+
+    # Only include upload.php outside wp-admin, and 0*.php when not WordPress
+    if ! is_wp_allowlist_active; then
+        SUSP_FIND_ARGS+=(-o -name "upload.php" -o -name "0*.php")
+    fi
+
+    SUSPICIOUS_NAMES=$(find "$SCAN_DIR" -type f \( "${SUSP_FIND_ARGS[@]}" \) \
+        2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|test" | filter_results | head -50 || true)
+
+    # When WP active, also check for upload.php outside wp-admin
+    if is_wp_allowlist_active; then
+        WP_UPLOAD_HITS=$(find "$SCAN_DIR" -type f -name "upload.php" 2>/dev/null \
+            | grep -v "node_modules\|vendor/\|\.git/\|test\|wp-admin/" | head -10 || true)
+        [[ -n "$WP_UPLOAD_HITS" ]] && SUSPICIOUS_NAMES+="$WP_UPLOAD_HITS"$'\n'
+    fi
 
     if [[ -n "$SUSPICIOUS_NAMES" ]]; then
         finding "high" "Files with Suspicious Names" \
@@ -80,7 +100,7 @@ EOF
             POLYGLOT_FILES+="$f"$'\n'
         fi
     done < <(find "$SCAN_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" \
-        -o -name "*.gif" -o -name "*.ico" -o -name "*.bmp" -o -name "*.svg" \) \
+        -o -name "*.gif" -o -name "*.ico" -o -name "*.bmp" \) \
         -size +0c -size -500k 2>/dev/null | grep -v "node_modules\|vendor/" | head -300)
 
     if [[ -n "$POLYGLOT_FILES" ]]; then
@@ -102,7 +122,7 @@ EOF
             LARGELINE_FILES+="$f (${SIZE} bytes, ${LINES} lines)"$'\n'
         fi
     done < <(find "$SCAN_DIR" -type f \( -name "*.php" -o -name "*.js" \) -size +5k \
-        2>/dev/null | grep -v "node_modules\|vendor/\|dist/\|build/\|\.min\." | head -200)
+        2>/dev/null | grep -v "node_modules\|vendor/\|dist/\|build/\|\.min\." | filter_results | head -200)
 
     if [[ -n "$LARGELINE_FILES" ]]; then
         finding "high" "Large Single-Line Files (Likely Obfuscated)" \
@@ -147,7 +167,7 @@ EOF
         SQLI_REGEX=$(IFS='|'; echo "${SQLI_PATTERNS[*]}")
         SQLI_RESULTS=$(grep -rnEi "$SQLI_REGEX" "$SCAN_DIR" \
             --include="*.php" --include="*.py" --include="*.js" --include="*.ts" --include="*.rb" \
-            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | head -30 || true)
+            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | filter_results | head -30 || true)
 
         if [[ -n "$SQLI_RESULTS" ]]; then
             finding "critical" "Potential SQL Injection Vulnerabilities" \
@@ -185,7 +205,7 @@ EOF
         XSS_REGEX=$(IFS='|'; echo "${XSS_PATTERNS[*]}")
         XSS_RESULTS=$(grep -rnEi "$XSS_REGEX" "$SCAN_DIR" \
             --include="*.php" --include="*.py" --include="*.erb" \
-            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | head -30 || true)
+            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | filter_results | head -30 || true)
 
         if [[ -n "$XSS_RESULTS" ]]; then
             finding "high" "Potential Cross-Site Scripting (XSS) Vulnerabilities" \

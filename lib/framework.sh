@@ -60,6 +60,9 @@ detect_frameworks() {
     find "$SCAN_DIR" -maxdepth 3 -name "*.py" -type f 2>/dev/null | head -1 | grep -q . && HAS_PYTHON=true
     find "$SCAN_DIR" -maxdepth 3 -name "*.rb" -type f 2>/dev/null | head -1 | grep -q . && HAS_RUBY=true
 
+    # Run WordPress integrity check before parallel scans (populates wp_verified.txt)
+    wp_run_integrity_check || true
+
     # Build file list cache for faster scanning
     build_file_list
 }
