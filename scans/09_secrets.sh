@@ -25,6 +25,13 @@ EOF
         ".npmrc" ".pypirc"
     )
 
+    # Auto-detect site URL if not provided via --url
+    local EFFECTIVE_URL="${SITE_URL:-}"
+    if [[ -z "$EFFECTIVE_URL" ]] && has_framework "wordpress" && [[ -f "$SCAN_DIR/wp-config.php" ]]; then
+        EFFECTIVE_URL=$(grep -E "define.*WP_(HOME|SITEURL)" "$SCAN_DIR/wp-config.php" \
+            | grep -oP "https?://[^'\"]*" | head -1 || true)
+    fi
+
     FOUND_SENSITIVE=""
     for P in "${SENSITIVE_PATTERNS[@]}"; do
         MATCHES=$(find "$SCAN_DIR" -maxdepth 3 -name "$P" -type f 2>/dev/null | \
@@ -32,7 +39,19 @@ EOF
         while IFS= read -r F; do
             [[ -z "$F" ]] && continue
             FSIZE=$(stat -c%s "$F" 2>/dev/null || echo "?")
-            FOUND_SENSITIVE+="$F ($FSIZE bytes)"$'\n'
+            if [[ "$P" == "error_log" ]]; then
+                if [[ -n "$EFFECTIVE_URL" ]]; then
+                    REL_PATH="${F#$SCAN_DIR/}"
+                    CHECK_URL="${EFFECTIVE_URL%/}/${REL_PATH}"
+                    HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 "$CHECK_URL" 2>/dev/null || echo "000")
+                    [[ "$HTTP_CODE" != "200" ]] && continue
+                    FOUND_SENSITIVE+="$F ($FSIZE bytes) — publicly accessible (HTTP $HTTP_CODE)"$'\n'
+                else
+                    FOUND_SENSITIVE+="$F ($FSIZE bytes) — HTTP check skipped (use --url to verify)"$'\n'
+                fi
+            else
+                FOUND_SENSITIVE+="$F ($FSIZE bytes)"$'\n'
+            fi
         done <<< "$MATCHES"
     done
 

@@ -1,5 +1,6 @@
 # ── Configuration Defaults ───────────────────────────────────────────────────
 SCAN_DIR=""
+SITE_URL=""
 WEBHOOK_URL=""
 API_KEY=""
 NOTIFY_EMAIL=""
