@@ -128,10 +128,10 @@ $RISK_DESC
 
 | Severity | Count | Impact |
 |----------|-------|--------|
-| 🔴 Critical | $CRITICAL | -25 pts (first), -20 (second), -15 (each after) |
-| 🟠 High | $HIGH | -15 pts (first), -12 (second), -10 (each after) |
-| 🟡 Medium | $MEDIUM | -5 pts each (max -30) |
-| 🔵 Low | $LOW | -2 pts each (max -15) |
+| 🔴 Critical | $CRITICAL | -10 pts (first), -7 (second), -5 (each after, max -35) |
+| 🟠 High | $HIGH | -6 pts (first), -4 (second), -3 (each after, max -25) |
+| 🟡 Medium | $MEDIUM | -3 pts each (max -15) |
+| 🔵 Low | $LOW | -1 pt each (max -8) |
 | ℹ️ Info | $INFO | 0 pts |
 | **Total Issues** | **$TOTAL_ISSUES** | |
 
@@ -143,14 +143,12 @@ $RISK_DESC
 
 | Grade | Score Range | Description |
 |-------|-------------|-------------|
-| **A+** | 97-100 | Outstanding - Exemplary security posture |
-| **A / A-** | 90-96 | Excellent - Strong security posture |
-| **B+/B/B-** | 80-89 | Good - Minor improvements needed |
-| **C+/C/C-** | 70-79 | Fair - Notable vulnerabilities present |
-| **D+/D** | 60-69 | Poor - Significant risks require attention |
-| **D-** | 50-59 | Critical - Severe vulnerabilities |
-| **F** | 35-49 | Failed - Critical compromise likely |
-| **F-** | 0-34 | Severely compromised - Assume breach |
+| **A+** | 95-100 | Outstanding - Exemplary security posture |
+| **A / A-** | 85-94 | Excellent - Strong security posture |
+| **B+/B/B-** | 70-84 | Good - Minor improvements needed |
+| **C+/C/C-** | 55-69 | Fair - Notable vulnerabilities present |
+| **D+/D/D-** | 40-54 | Poor - Significant risks require attention |
+| **F** | 30-39 | Critical - Multiple severe vulnerabilities |
 
 *Deductions use diminishing returns: repeated issues of the same severity have reduced impact.*
 *Medium and Low severity deductions are capped to prevent score collapse from minor issues alone.*

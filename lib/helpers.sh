@@ -30,70 +30,72 @@ calculate_security_score() {
     local grade=""
     local grade_emoji=""
 
-    # Weighted point deductions with diminishing returns for repeated issues
-    # First few issues of each severity have full impact, then taper off
+    # Lenient scoring: gentle deductions with aggressive diminishing returns
+    # No issue combination should feel punishing — the goal is actionable feedback
     local crit_penalty=0 high_penalty=0 med_penalty=0 low_penalty=0
 
-    # Critical: -25 for first, -20 for second, -15 each after (min 10 each)
+    # Critical: -10 first, -7 second, -5 each after (cap at 35)
     local i
     for ((i=1; i<=CRITICAL; i++)); do
-        if [[ $i -eq 1 ]]; then crit_penalty=$((crit_penalty + 25))
-        elif [[ $i -eq 2 ]]; then crit_penalty=$((crit_penalty + 20))
-        else crit_penalty=$((crit_penalty + 15))
+        if [[ $i -eq 1 ]]; then crit_penalty=$((crit_penalty + 10))
+        elif [[ $i -eq 2 ]]; then crit_penalty=$((crit_penalty + 7))
+        else crit_penalty=$((crit_penalty + 5))
         fi
     done
+    [[ $crit_penalty -gt 35 ]] && crit_penalty=35
 
-    # High: -15 for first, -12 for second, -10 each after
+    # High: -6 first, -4 second, -3 each after (cap at 25)
     for ((i=1; i<=HIGH; i++)); do
-        if [[ $i -eq 1 ]]; then high_penalty=$((high_penalty + 15))
-        elif [[ $i -eq 2 ]]; then high_penalty=$((high_penalty + 12))
-        else high_penalty=$((high_penalty + 10))
+        if [[ $i -eq 1 ]]; then high_penalty=$((high_penalty + 6))
+        elif [[ $i -eq 2 ]]; then high_penalty=$((high_penalty + 4))
+        else high_penalty=$((high_penalty + 3))
         fi
     done
+    [[ $high_penalty -gt 25 ]] && high_penalty=25
 
-    # Medium: -5 each (cap at 30 total)
-    med_penalty=$((MEDIUM * 5))
-    [[ $med_penalty -gt 30 ]] && med_penalty=30
+    # Medium: -3 each (cap at 15 total)
+    med_penalty=$((MEDIUM * 3))
+    [[ $med_penalty -gt 15 ]] && med_penalty=15
 
-    # Low: -2 each (cap at 15 total)
-    low_penalty=$((LOW * 2))
-    [[ $low_penalty -gt 15 ]] && low_penalty=15
+    # Low: -1 each (cap at 8 total)
+    low_penalty=$((LOW * 1))
+    [[ $low_penalty -gt 8 ]] && low_penalty=8
 
     score=$((score - crit_penalty - high_penalty - med_penalty - low_penalty))
 
-    # Ensure score stays in 0-100 range
-    [[ $score -lt 0 ]] && score=0
+    # Floor: score never drops below 30 — every site has something to build on
+    [[ $score -lt 30 ]] && score=30
+
+    # Ensure score stays in 30-100 range
     [[ $score -gt 100 ]] && score=100
 
-    # Grade: A+ for perfect, then standard A-F with +/- modifiers
-    if [[ $score -ge 97 ]]; then
+    # Grade: generous boundaries — focus on encouragement
+    if [[ $score -ge 95 ]]; then
         grade="A+"; grade_emoji="🟢"
-    elif [[ $score -ge 93 ]]; then
-        grade="A"; grade_emoji="🟢"
     elif [[ $score -ge 90 ]]; then
+        grade="A"; grade_emoji="🟢"
+    elif [[ $score -ge 85 ]]; then
         grade="A-"; grade_emoji="🟢"
-    elif [[ $score -ge 87 ]]; then
-        grade="B+"; grade_emoji="🟡"
-    elif [[ $score -ge 83 ]]; then
-        grade="B"; grade_emoji="🟡"
     elif [[ $score -ge 80 ]]; then
-        grade="B-"; grade_emoji="🟡"
-    elif [[ $score -ge 77 ]]; then
-        grade="C+"; grade_emoji="🟠"
-    elif [[ $score -ge 73 ]]; then
-        grade="C"; grade_emoji="🟠"
+        grade="B+"; grade_emoji="🟡"
+    elif [[ $score -ge 75 ]]; then
+        grade="B"; grade_emoji="🟡"
     elif [[ $score -ge 70 ]]; then
-        grade="C-"; grade_emoji="🟠"
+        grade="B-"; grade_emoji="🟡"
     elif [[ $score -ge 65 ]]; then
-        grade="D+"; grade_emoji="🔴"
+        grade="C+"; grade_emoji="🟠"
     elif [[ $score -ge 60 ]]; then
-        grade="D"; grade_emoji="🔴"
+        grade="C"; grade_emoji="🟠"
+    elif [[ $score -ge 55 ]]; then
+        grade="C-"; grade_emoji="🟠"
     elif [[ $score -ge 50 ]]; then
+        grade="D+"; grade_emoji="🔴"
+    elif [[ $score -ge 45 ]]; then
+        grade="D"; grade_emoji="🔴"
+    elif [[ $score -ge 40 ]]; then
         grade="D-"; grade_emoji="🔴"
-    elif [[ $score -ge 35 ]]; then
-        grade="F"; grade_emoji="💀"
     else
-        grade="F-"; grade_emoji="☠️"
+        grade="F"; grade_emoji="💀"
     fi
 
     echo "$score:$grade:$grade_emoji"
@@ -107,8 +109,7 @@ get_grade_description() {
         C+|C|C-) echo "Fair security with notable vulnerabilities. Address high severity issues promptly." ;;
         D+|D)    echo "Poor security with significant risks. Multiple high and critical issues require attention." ;;
         D-)      echo "Critical security state. Severe vulnerabilities present. Immediate action required." ;;
-        F)       echo "Failed security assessment. Critical compromise likely. Emergency response needed." ;;
-        F-)      echo "Severely compromised. Multiple critical vulnerabilities detected. Assume breach and respond immediately." ;;
+        F)       echo "Multiple critical vulnerabilities detected. Immediate remediation required." ;;
         *)       echo "Unable to determine security posture." ;;
     esac
 }
