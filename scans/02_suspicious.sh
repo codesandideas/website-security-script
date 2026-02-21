@@ -141,33 +141,47 @@ EOF
 
     if $HAS_PHP; then
         SQLI_PATTERNS+=(
-            'query\s*\(\s*["\x27].*\$_(GET|POST|REQUEST|COOKIE)'
-            'mysql_query\s*\(\s*["\x27].*\$_(GET|POST|REQUEST)'
-            'mysqli_query\s*\(.*\$_(GET|POST|REQUEST)'
-            '\->query\s*\(\s*["\x27].*\.\s*\$_(GET|POST|REQUEST)'
+            'query[[:space:]]*\([[:space:]]*["'"'"'].*\$_(GET|POST|REQUEST|COOKIE)'
+            'mysql_query[[:space:]]*\([[:space:]]*["'"'"'].*\$_(GET|POST|REQUEST)'
+            'mysqli_query[[:space:]]*\(.*\$_(GET|POST|REQUEST)'
+            '->query[[:space:]]*\([[:space:]]*["'"'"'].*\.[[:space:]]*\$_(GET|POST|REQUEST)'
         )
     fi
 
     if $HAS_PYTHON; then
         SQLI_PATTERNS+=(
-            'execute\s*\(\s*["\x27].*%s.*%\s*\(\s*request\.'
-            'execute\s*\(\s*f["\x27].*\{request\.'
-            'execute\s*\(.*\.format\s*\(.*request\.'
+            'execute[[:space:]]*\([[:space:]]*["'"'"'].*%s.*%[[:space:]]*\([[:space:]]*request\.'
+            'execute[[:space:]]*\([[:space:]]*f["'"'"'].*\{request\.'
+            'execute[[:space:]]*\(.*\.format[[:space:]]*\(.*request\.'
         )
     fi
 
     if $HAS_JS; then
         SQLI_PATTERNS+=(
-            'query\s*\(\s*`.*\$\{req\.(body|query|params)'
-            'query\s*\(\s*["\x27].*\+\s*req\.(body|query|params)'
+            'query[[:space:]]*\([[:space:]]*`.*\$\{req\.(body|query|params)'
+            'query[[:space:]]*\([[:space:]]*["'"'"'].*\+[[:space:]]*req\.(body|query|params)'
         )
     fi
 
     if [[ ${#SQLI_PATTERNS[@]} -gt 0 ]]; then
         SQLI_REGEX=$(IFS='|'; echo "${SQLI_PATTERNS[*]}")
-        SQLI_RESULTS=$(grep -rnEi "$SQLI_REGEX" "$SCAN_DIR" \
-            --include="*.php" --include="*.py" --include="*.js" --include="*.ts" --include="*.rb" \
-            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | filter_results | head -30 || true)
+
+        # Filter the pre-built file index by extension — no extra filesystem walk
+        SQLI_CANDIDATES=$(grep -E '\.(php|py|js|ts|rb)$' "$FILE_LIST" 2>/dev/null \
+            | grep -vE "$EXCLUDE_PATTERN" || true)
+
+        SQLI_RESULTS=""
+        if [[ -n "$SQLI_CANDIDATES" ]]; then
+            # Step 1: find matching files (grep -l stops at first match per file — fast)
+            SQLI_MATCHING=$(echo "$SQLI_CANDIDATES" \
+                | xargs -d '\n' grep -lE "$SQLI_REGEX" 2>/dev/null | head -30 || true)
+            # Step 2: extract up to 3 lines per matched file only
+            if [[ -n "$SQLI_MATCHING" ]]; then
+                SQLI_RESULTS=$(echo "$SQLI_MATCHING" \
+                    | xargs -d '\n' grep -nE -m 3 "$SQLI_REGEX" 2>/dev/null \
+                    | filter_results | head -30 || true)
+            fi
+        fi
 
         if [[ -n "$SQLI_RESULTS" ]]; then
             finding "critical" "Potential SQL Injection Vulnerabilities" \
@@ -187,25 +201,42 @@ EOF
 
     if $HAS_PHP; then
         XSS_PATTERNS+=(
-            'echo\s+\$_(GET|POST|REQUEST|COOKIE|SERVER)\['
-            'print\s+\$_(GET|POST|REQUEST)\['
-            '<?=\s*\$_(GET|POST|REQUEST)\['
+            'echo[[:space:]]+\$_(GET|POST|REQUEST|COOKIE|SERVER)\['
+            'print[[:space:]]+\$_(GET|POST|REQUEST)\['
+            '<\?=[[:space:]]*\$_(GET|POST|REQUEST)\['
         )
     fi
 
     if $HAS_PYTHON; then
         XSS_PATTERNS+=(
-            'return\s+HttpResponse\s*\(\s*request\.(GET|POST)'
-            'mark_safe\s*\(\s*request\.'
-            'Markup\s*\(\s*request\.'
+            'return[[:space:]]+HttpResponse[[:space:]]*\([[:space:]]*request\.(GET|POST)'
+            'mark_safe[[:space:]]*\([[:space:]]*request\.'
+            'Markup[[:space:]]*\([[:space:]]*request\.'
         )
     fi
 
     if [[ ${#XSS_PATTERNS[@]} -gt 0 ]]; then
         XSS_REGEX=$(IFS='|'; echo "${XSS_PATTERNS[*]}")
-        XSS_RESULTS=$(grep -rnEi "$XSS_REGEX" "$SCAN_DIR" \
-            --include="*.php" --include="*.py" --include="*.erb" \
-            2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | filter_results | head -30 || true)
+
+        # Filter the pre-built file index by extension — no extra filesystem walk.
+        # Exclusions applied here, before scanning, not after.
+        XSS_CANDIDATES=$(grep -E '\.(php|py|erb)$' "$FILE_LIST" 2>/dev/null \
+            | grep -vE "$EXCLUDE_PATTERN" || true)
+
+        XSS_RESULTS=""
+        if [[ -n "$XSS_CANDIDATES" ]]; then
+            # Step 1: find files that contain any XSS pattern.
+            # grep -l exits each file on first match — far faster than scanning all lines.
+            XSS_MATCHING=$(echo "$XSS_CANDIDATES" \
+                | xargs -d '\n' grep -lE "$XSS_REGEX" 2>/dev/null | head -30 || true)
+            # Step 2: collect up to 3 matching lines per matched file only.
+            # No -i flag needed — these identifiers are case-sensitive.
+            if [[ -n "$XSS_MATCHING" ]]; then
+                XSS_RESULTS=$(echo "$XSS_MATCHING" \
+                    | xargs -d '\n' grep -nE -m 3 "$XSS_REGEX" 2>/dev/null \
+                    | filter_results | head -30 || true)
+            fi
+        fi
 
         if [[ -n "$XSS_RESULTS" ]]; then
             finding "high" "Potential Cross-Site Scripting (XSS) Vulnerabilities" \
