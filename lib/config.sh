@@ -54,6 +54,12 @@ SCAN_13_DATABASE=true         # Database port exposure & credential checks
 SCAN_14_CONTAINER=true        # Container / Docker security checks
 SCAN_15_LOGGING=true          # Logging & monitoring verification
 
+# ── SMTP Configuration ──────────────────────────────────────────────────────
+SMTP_HOST=""
+SMTP_USER=""
+SMTP_PASS=""
+SMTP_FROM=""
+
 # ── Config File ──────────────────────────────────────────────────────────────
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo "~${REAL_USER}")
@@ -98,6 +104,10 @@ if [[ -f "$CONFIG_FILE" ]]; then
             SCAN_13_DATABASE)       SCAN_13_DATABASE="$value" ;;
             SCAN_14_CONTAINER)      SCAN_14_CONTAINER="$value" ;;
             SCAN_15_LOGGING)        SCAN_15_LOGGING="$value" ;;
+            SMTP_HOST)              SMTP_HOST="$value" ;;
+            SMTP_USER)              SMTP_USER="$value" ;;
+            SMTP_PASS)              SMTP_PASS="$value" ;;
+            SMTP_FROM)              SMTP_FROM="$value" ;;
         esac
     done < "$CONFIG_FILE"
 fi
@@ -128,6 +138,13 @@ config_show() {
         echo -e "${BOLD}  WEBHOOK_URL:${NC}     ${WEBHOOK_URL:-<not set>}"
         echo -e "${BOLD}  API_KEY:${NC}         ${API_KEY:+****${API_KEY: -4}}"
         [[ -z "$API_KEY" ]] && echo -e "${BOLD}  API_KEY:${NC}         <not set>"
+        echo ""
+        echo -e "${BOLD}  SMTP_HOST:${NC}       ${SMTP_HOST:-<not set>}"
+        echo -e "${BOLD}  SMTP_USER:${NC}       ${SMTP_USER:-<not set>}"
+        echo -e "${BOLD}  SMTP_PASS:${NC}       ${SMTP_PASS:+****${SMTP_PASS: -2}}"
+        [[ -z "$SMTP_PASS" ]] && echo -e "${BOLD}  SMTP_PASS:${NC}       <not set>"
+        echo -e "${BOLD}  SMTP_FROM:${NC}       ${SMTP_FROM:-<not set>}"
+        echo ""
         echo -e "${BOLD}  EXCLUDE_PATTERN:${NC} ${EXCLUDE_PATTERN}"
         echo -e "${BOLD}  MAX_FILE_SIZE:${NC}   ${MAX_FILE_SIZE}"
         echo -e "${BOLD}  SCAN_TIMEOUT:${NC}    ${SCAN_TIMEOUT}s"

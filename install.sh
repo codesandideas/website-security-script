@@ -89,6 +89,16 @@ WEBHOOK_URL=""
 # API key for webhook authentication
 API_KEY=""
 
+# ── SMTP Email Configuration ───────────────────────────────────────────────────
+# Set these to enable direct email delivery via curl SMTP (no mailx required).
+# Supported: Gmail (App Passwords), SendGrid, Mailgun, Amazon SES, etc.
+# Configure with: webscan --set-smtp-host smtp.gmail.com:587
+#
+# SMTP_HOST=""           # host:port  e.g. smtp.gmail.com:587 or smtp.example.com:465
+# SMTP_USER=""           # SMTP username / sender email
+# SMTP_PASS=""           # SMTP password or App Password
+# SMTP_FROM=""           # Optional From header e.g. "Scanner <you@example.com>"
+
 # Default exclude pattern (regex)
 # EXCLUDE_PATTERN='node_modules|vendor/|\.git/|venv/|__pycache__|dist/|build/|\.next/|cache/|\.svn/|\.hg/'
 
@@ -159,8 +169,25 @@ echo "    webscan --enable-email                Enable email notifications"
 echo "    webscan --disable-email               Disable email notifications"
 echo "    webscan --set-webhook <url>           Set default webhook URL"
 echo "    webscan --set-api-key <key>           Set default API key"
+echo "    webscan --set-smtp-host smtp.X.com:587  Configure SMTP for email delivery"
+echo "    webscan --test-email you@example.com  Test SMTP configuration"
 echo "    webscan --show-config                 Show current configuration"
 echo "    webscan --edit-config                 Open config in editor"
+echo ""
+echo -e "  ${BOLD}Output formats:${NC}"
+echo "    webscan /path --output html           Self-contained HTML report with charts"
+echo "    webscan /path --output json           Machine-readable JSON (CI/CD)"
+echo "    webscan /path --output sarif          SARIF for GitHub Security tab"
+echo "    webscan /path --output all            All formats"
+echo ""
+echo -e "  ${BOLD}Auto-remediation:${NC}"
+echo "    webscan /path --fix                   Interactively fix issues"
+echo "    webscan /path --fix-auto              Auto-apply all safe fixes"
+echo "    webscan --restore <id>                Restore a quarantined file"
+echo ""
+echo -e "  ${BOLD}Baseline scanning:${NC}"
+echo "    webscan /path --baseline save         Save a cryptographic baseline"
+echo "    webscan /path --baseline compare      Compare against saved baseline"
 echo ""
 echo -e "  ${BOLD}Override on the fly:${NC}"
 echo "    webscan /path --email other@mail.com  Use a different email for this scan"
