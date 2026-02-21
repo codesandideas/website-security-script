@@ -100,6 +100,43 @@ API_KEY=""
 
 # Total scan timeout (seconds)
 # SCAN_TIMEOUT=300
+
+# ── Scan Mode ─────────────────────────────────────────────────────────────────
+# Controls which category of checks runs by default.
+# Override on the command line with: webscan /path --mode files
+#
+#   all    = run all 15 scan sections (default — full audit)
+#   files  = file-based checks only — no root/server access needed.
+#            Safe on shared hosting. Skips sections 8,10,12,13,14,15.
+#   server = server-level checks only — requires server/root access.
+#            Skips sections 1-7, 9, 11 (file scans).
+#
+# SCAN_MODE=all
+
+# ── Module Toggles ────────────────────────────────────────────────────────────
+# Uncomment and set to false to permanently disable individual scan sections.
+# Useful when certain checks don't apply to your environment.
+#
+# FILE-BASED scans — analyse files on disk; work on any hosting:
+# SCAN_01_MALWARE=true
+# SCAN_02_SUSPICIOUS=true
+# SCAN_03_OBFUSCATION=true
+# SCAN_04_INTEGRITY=true
+# SCAN_05_FRAMEWORK=true
+# SCAN_06_DEPENDENCIES=true
+# SCAN_07_PERMISSIONS=true
+# SCAN_09_SECRETS=true
+# SCAN_11_MODIFIED_FILES=true
+#
+# SERVER-LEVEL scans — require access to server config, ports, processes.
+# On shared hosting the server is managed by your host; disable these to
+# avoid false-positives and wasted scan time:
+# SCAN_08_SERVER_CONFIG=false
+# SCAN_10_NETWORK=false
+# SCAN_12_SSL=false
+# SCAN_13_DATABASE=false
+# SCAN_14_CONTAINER=false
+# SCAN_15_LOGGING=false
 DEFAULTCONFIG
     chown -R "${REAL_USER}:$(id -gn "$REAL_USER")" "$CONFIG_DIR"
     ok "Config created at ${CONFIG_FILE}"
@@ -112,7 +149,11 @@ echo ""
 ok "Installation complete!"
 echo ""
 echo -e "  ${BOLD}Usage:${NC}"
-echo "    webscan /path/to/website              Scan a website directory"
+echo "    webscan /path/to/website              Scan a website directory (full scan)"
+echo "    webscan /path --mode files            File-based scan — safe on shared hosting"
+echo "    webscan /path --mode server           Server-level audit (needs root access)"
+echo "    webscan /path --skip database         Skip the database scan module"
+echo "    webscan /path --only malware          Run malware check only"
 echo "    webscan --set-email you@example.com   Set default email"
 echo "    webscan --enable-email                Enable email notifications"
 echo "    webscan --disable-email               Disable email notifications"

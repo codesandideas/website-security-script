@@ -26,6 +26,34 @@ MAX_PARALLEL=4    # Maximum parallel scan sections
 SHOW_RECOMMENDATIONS=true  # Show recommendations section in report
 LOG_DIR="${REAL_HOME:-$HOME}/.config/webscan/logs"
 
+# ── Scan Mode ─────────────────────────────────────────────────────────────────
+# all    = run every section (default)
+# files  = file-based scans only — safe on shared hosting, no server access needed
+# server = server-level checks only — requires root/server access
+SCAN_MODE="all"
+
+# ── Module Toggles ────────────────────────────────────────────────────────────
+# FILE-BASED scans — analyse code on disk, work on any shared hosting
+SCAN_01_MALWARE=true          # Malware & backdoor signatures
+SCAN_02_SUSPICIOUS=true       # Suspicious file patterns & code
+SCAN_03_OBFUSCATION=true      # Obfuscated / encoded code detection
+SCAN_04_INTEGRITY=true        # File integrity & symlink anomalies
+SCAN_05_FRAMEWORK=true        # Framework-specific security audit
+SCAN_06_DEPENDENCIES=true     # Dependency & supply-chain risk checks
+SCAN_07_PERMISSIONS=true      # File & directory permission audit
+SCAN_09_SECRETS=true          # Secrets & credential exposure
+SCAN_11_MODIFIED_FILES=true   # Recently modified files tracker
+
+# SERVER-LEVEL scans — require access to server config, ports, processes
+# On shared hosting the server is managed by the host — disable these to avoid
+# false-positives and wasted scan time.
+SCAN_08_SERVER_CONFIG=true    # Web server config (Apache/Nginx/PHP)
+SCAN_10_NETWORK=true          # Network, CORS & suspicious crontab entries
+SCAN_12_SSL=true              # SSL/TLS certificate & cipher checks
+SCAN_13_DATABASE=true         # Database port exposure & credential checks
+SCAN_14_CONTAINER=true        # Container / Docker security checks
+SCAN_15_LOGGING=true          # Logging & monitoring verification
+
 # ── Config File ──────────────────────────────────────────────────────────────
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo "~${REAL_USER}")
@@ -54,6 +82,22 @@ if [[ -f "$CONFIG_FILE" ]]; then
             SHOW_RECOMMENDATIONS) SHOW_RECOMMENDATIONS="$value" ;;
             MAX_PARALLEL) MAX_PARALLEL="$value" ;;
             USE_ALLOWLIST) USE_ALLOWLIST="$value" ;;
+            SCAN_MODE) SCAN_MODE="$value" ;;
+            SCAN_01_MALWARE)        SCAN_01_MALWARE="$value" ;;
+            SCAN_02_SUSPICIOUS)     SCAN_02_SUSPICIOUS="$value" ;;
+            SCAN_03_OBFUSCATION)    SCAN_03_OBFUSCATION="$value" ;;
+            SCAN_04_INTEGRITY)      SCAN_04_INTEGRITY="$value" ;;
+            SCAN_05_FRAMEWORK)      SCAN_05_FRAMEWORK="$value" ;;
+            SCAN_06_DEPENDENCIES)   SCAN_06_DEPENDENCIES="$value" ;;
+            SCAN_07_PERMISSIONS)    SCAN_07_PERMISSIONS="$value" ;;
+            SCAN_08_SERVER_CONFIG)  SCAN_08_SERVER_CONFIG="$value" ;;
+            SCAN_09_SECRETS)        SCAN_09_SECRETS="$value" ;;
+            SCAN_10_NETWORK)        SCAN_10_NETWORK="$value" ;;
+            SCAN_11_MODIFIED_FILES) SCAN_11_MODIFIED_FILES="$value" ;;
+            SCAN_12_SSL)            SCAN_12_SSL="$value" ;;
+            SCAN_13_DATABASE)       SCAN_13_DATABASE="$value" ;;
+            SCAN_14_CONTAINER)      SCAN_14_CONTAINER="$value" ;;
+            SCAN_15_LOGGING)        SCAN_15_LOGGING="$value" ;;
         esac
     done < "$CONFIG_FILE"
 fi
@@ -88,6 +132,17 @@ config_show() {
         echo -e "${BOLD}  MAX_FILE_SIZE:${NC}   ${MAX_FILE_SIZE}"
         echo -e "${BOLD}  SCAN_TIMEOUT:${NC}    ${SCAN_TIMEOUT}s"
         echo -e "${BOLD}  SHOW_RECOMMENDATIONS:${NC} ${SHOW_RECOMMENDATIONS}"
+        echo ""
+        echo -e "${BOLD}  SCAN_MODE:${NC}           ${SCAN_MODE}  (all | files | server)"
+        echo ""
+        echo -e "${BOLD}  Module Toggles (File-Based):${NC}"
+        echo -e "    SCAN_01_MALWARE=${SCAN_01_MALWARE}  SCAN_02_SUSPICIOUS=${SCAN_02_SUSPICIOUS}  SCAN_03_OBFUSCATION=${SCAN_03_OBFUSCATION}"
+        echo -e "    SCAN_04_INTEGRITY=${SCAN_04_INTEGRITY}  SCAN_05_FRAMEWORK=${SCAN_05_FRAMEWORK}  SCAN_06_DEPENDENCIES=${SCAN_06_DEPENDENCIES}"
+        echo -e "    SCAN_07_PERMISSIONS=${SCAN_07_PERMISSIONS}  SCAN_09_SECRETS=${SCAN_09_SECRETS}  SCAN_11_MODIFIED_FILES=${SCAN_11_MODIFIED_FILES}"
+        echo ""
+        echo -e "${BOLD}  Module Toggles (Server-Level):${NC}"
+        echo -e "    SCAN_08_SERVER_CONFIG=${SCAN_08_SERVER_CONFIG}  SCAN_10_NETWORK=${SCAN_10_NETWORK}  SCAN_12_SSL=${SCAN_12_SSL}"
+        echo -e "    SCAN_13_DATABASE=${SCAN_13_DATABASE}  SCAN_14_CONTAINER=${SCAN_14_CONTAINER}  SCAN_15_LOGGING=${SCAN_15_LOGGING}"
     else
         echo "  No config file found. Run a --set-* command to create one."
     fi
