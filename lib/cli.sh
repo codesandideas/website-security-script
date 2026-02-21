@@ -1,6 +1,7 @@
 # ── Argument Parsing ────────────────────────────────────────────────────────
 NO_EMAIL=false
 CRON_SCHEDULE=""
+OUTPUT_FORMATS=()   # "html" "json" "sarif" "all" — in addition to always-on markdown
 
 show_usage() {
     echo "Usage: webscan <path> [options]"
@@ -23,6 +24,27 @@ show_usage() {
     echo "  --remove-cron             Remove all webscan cron jobs"
     echo "  --list-cron               List active webscan cron jobs"
     echo ""
+    echo "Output Formats:"
+    echo "  --output <format>         Generate additional output format (repeatable):"
+    echo "                              html   = self-contained HTML report with charts"
+    echo "                              json   = machine-readable JSON (CI/CD integration)"
+    echo "                              sarif  = SARIF 2.1.0 (GitHub Security tab)"
+    echo "                              all    = all formats above"
+    echo "  Markdown report is always generated."
+    echo ""
+    echo "Auto-Remediation:"
+    echo "  --fix                     Interactively fix common issues after scan"
+    echo "  --fix-auto                Auto-apply all safe fixes without prompting"
+    echo "  --restore <id>            Restore a quarantined file by ID"
+    echo "  --list-quarantine         List all quarantined files"
+    echo ""
+    echo "Baseline / Diff Scanning:"
+    echo "  --baseline save           Save a cryptographic baseline of the site"
+    echo "  --baseline compare        Compare current scan against saved baseline"
+    echo "  --baseline list           List all saved baselines"
+    echo "  --baseline delete <name>  Delete a named baseline"
+    echo "  --baseline-name <name>    Name for the baseline (default: auto-timestamp)"
+    echo ""
     echo "Scan Scope (Speed & Compatibility):"
     echo "  --mode <mode>             Scan scope — one of:"
     echo "                              all    = full scan, all 15 sections (default)"
@@ -42,18 +64,31 @@ show_usage() {
     echo "  --disable-email           Disable email notifications by default"
     echo "  --set-webhook <url>       Save default webhook URL"
     echo "  --set-api-key <key>       Save default API key"
+    echo "  --set-smtp-host <host>    SMTP server (e.g. smtp.gmail.com:587)"
+    echo "  --set-smtp-user <email>   SMTP username / sender address"
+    echo "  --set-smtp-pass <pass>    SMTP password or app-specific password"
+    echo "  --set-smtp-from <from>    From header (e.g. 'Scanner <you@example.com>')"
+    echo "  --test-email <address>    Send a test email to verify SMTP settings"
     echo "  --show-config             Show current configuration"
     echo "  --edit-config             Open config file in editor"
     echo "  --help                    Show this help message"
     echo ""
     echo "Examples:"
     echo "  webscan /var/www/html"
+    echo "  webscan /var/www/html --output html                  # HTML report"
+    echo "  webscan /var/www/html --output json --output sarif   # For CI/CD"
+    echo "  webscan /var/www/html --output all                   # All formats"
+    echo "  webscan /var/www/html --fix                          # Interactive fix"
+    echo "  webscan /var/www/html --fix-auto                     # Auto-fix"
+    echo "  webscan /var/www/html --baseline save                # Save baseline"
+    echo "  webscan /var/www/html --baseline compare             # Diff report"
     echo "  webscan /var/www/html --mode files           # Shared-hosting safe scan"
     echo "  webscan /var/www/html --mode server          # Server config audit only"
     echo "  webscan /var/www/html --skip database        # Skip DB checks"
-    echo "  webscan /var/www/html --skip database --skip container"
     echo "  webscan /var/www/html --only malware         # Malware check only"
     echo "  webscan /var/www/html --email admin@site.com"
+    echo "  webscan --set-smtp-host smtp.gmail.com:587"
+    echo "  webscan --test-email admin@site.com"
     echo "  webscan --set-email admin@site.com"
     echo "  webscan /var/www/html --background"
     echo "  webscan /var/www/html --cron daily"
@@ -75,6 +110,34 @@ parse_args() {
             --no-email)      NO_EMAIL=true; shift ;;
             --no-recommendations) SHOW_RECOMMENDATIONS=false; shift ;;
             --no-allowlist)      USE_ALLOWLIST=false; shift ;;
+            # ── Output formats ─────────────────────────────────────────────
+            --output)
+                case "$2" in
+                    html|json|sarif) OUTPUT_FORMATS+=("$2") ;;
+                    all)             OUTPUT_FORMATS+=("html" "json" "sarif") ;;
+                    markdown)        ;;  # always on, no-op
+                    *) echo "Unknown output format '$2'. Valid: html json sarif all markdown"; exit 1 ;;
+                esac
+                shift 2 ;;
+            # ── Auto-remediation ───────────────────────────────────────────
+            --fix)           FIX_MODE=true; shift ;;
+            --fix-auto)      FIX_MODE=true; FIX_AUTO=true; shift ;;
+            --restore)       restore_quarantine "$2" ;;
+            --list-quarantine) list_quarantine ;;
+            # ── Baseline scanning ──────────────────────────────────────────
+            --baseline)
+                case "$2" in
+                    save|compare|list|delete) BASELINE_MODE="$2" ;;
+                    *) echo "Unknown baseline mode '$2'. Valid: save compare list delete"; exit 1 ;;
+                esac
+                shift 2 ;;
+            --baseline-name) BASELINE_NAME="$2"; shift 2 ;;
+            # ── SMTP configuration ─────────────────────────────────────────
+            --set-smtp-host) config_set "SMTP_HOST" "$2"; exit 0 ;;
+            --set-smtp-user) config_set "SMTP_USER" "$2"; exit 0 ;;
+            --set-smtp-pass) config_set "SMTP_PASS" "$2"; exit 0 ;;
+            --set-smtp-from) config_set "SMTP_FROM" "$2"; exit 0 ;;
+            --test-email)    send_test_email "$2" ;;  # exits inside function
             --mode)
                 SCAN_MODE="$2"
                 case "$SCAN_MODE" in

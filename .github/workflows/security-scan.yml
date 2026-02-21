@@ -1,0 +1,193 @@
+name: Website Security Scan
+
+# ── When to run ───────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  schedule:
+    # Run a full scan every Monday at 03:00 UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      scan_mode:
+        description: 'Scan scope'
+        required: false
+        default: 'files'
+        type: choice
+        options: [ files, all ]
+      scan_path:
+        description: 'Path to scan (relative to repo root)'
+        required: false
+        default: '.'
+
+# ── Permissions ───────────────────────────────────────────────────────────────
+permissions:
+  contents: read
+  security-events: write   # Required for uploading SARIF to GitHub Security tab
+  actions: read
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for modified-file detection
+
+      # ── Install scanner ─────────────────────────────────────────────────────
+      - name: Install WebSecurityScanner
+        run: |
+          git clone https://github.com/${{ github.repository_owner }}/website-security-script.git /tmp/webscan-tool || \
+          cp -r . /tmp/webscan-tool
+          chmod +x /tmp/webscan-tool/website-security-script.sh
+          chmod +x /tmp/webscan-tool/lib/*.sh 2>/dev/null || true
+          chmod +x /tmp/webscan-tool/scans/*.sh 2>/dev/null || true
+
+      # ── Run the scan ────────────────────────────────────────────────────────
+      - name: Run security scan
+        id: scan
+        run: |
+          SCAN_PATH="${{ github.event.inputs.scan_path || '.' }}"
+          SCAN_MODE="${{ github.event.inputs.scan_mode || 'files' }}"
+          REPORT_DIR="$GITHUB_WORKSPACE"
+
+          # Run with JSON + SARIF output for CI integration
+          /tmp/webscan-tool/website-security-script.sh \
+            "$SCAN_PATH" \
+            --mode "$SCAN_MODE" \
+            --output sarif \
+            --output json \
+            --no-email \
+            --skip container \
+            --skip database \
+            --skip ssl \
+            --skip network \
+            2>&1 | tee scan-output.log || true
+
+          # Find the generated report files
+          REPORT_MD=$(ls security-report_*.md 2>/dev/null | head -1 || true)
+          REPORT_SARIF=$(ls security-report_*.sarif 2>/dev/null | head -1 || true)
+          REPORT_JSON=$(ls security-report_*.json 2>/dev/null | head -1 || true)
+
+          echo "report_md=${REPORT_MD}"     >> "$GITHUB_OUTPUT"
+          echo "report_sarif=${REPORT_SARIF}" >> "$GITHUB_OUTPUT"
+          echo "report_json=${REPORT_JSON}"  >> "$GITHUB_OUTPUT"
+
+          # Extract security score for the step summary
+          if [[ -f "$REPORT_JSON" ]]; then
+            SCORE=$(python3 -c "import json; d=json.load(open('$REPORT_JSON')); print(d['summary']['security_score'])" 2>/dev/null || echo "N/A")
+            GRADE=$(python3 -c "import json; d=json.load(open('$REPORT_JSON')); print(d['summary']['security_grade'])" 2>/dev/null || echo "N/A")
+            CRITICAL=$(python3 -c "import json; d=json.load(open('$REPORT_JSON')); print(d['summary']['critical'])" 2>/dev/null || echo "0")
+            HIGH=$(python3 -c "import json; d=json.load(open('$REPORT_JSON')); print(d['summary']['high'])" 2>/dev/null || echo "0")
+            echo "score=${SCORE}" >> "$GITHUB_OUTPUT"
+            echo "grade=${GRADE}" >> "$GITHUB_OUTPUT"
+            echo "critical=${CRITICAL}" >> "$GITHUB_OUTPUT"
+            echo "high=${HIGH}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Upload SARIF to GitHub Security tab ─────────────────────────────────
+      - name: Upload SARIF to GitHub Security tab
+        if: steps.scan.outputs.report_sarif != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.report_sarif }}
+          category: websecurity-scanner
+
+      # ── Upload report artifacts ──────────────────────────────────────────────
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-reports
+          path: |
+            security-report_*.md
+            security-report_*.html
+            security-report_*.json
+            security-report_*.sarif
+            scan-output.log
+          retention-days: 90
+
+      # ── Write job summary ────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          SCORE="${{ steps.scan.outputs.score || 'N/A' }}"
+          GRADE="${{ steps.scan.outputs.grade || 'N/A' }}"
+          CRITICAL="${{ steps.scan.outputs.critical || '0' }}"
+          HIGH="${{ steps.scan.outputs.high || '0' }}"
+
+          # Determine status emoji
+          if [[ "$CRITICAL" -gt 0 ]]; then STATUS="🔴 Critical issues found"
+          elif [[ "$HIGH" -gt 0 ]];   then STATUS="🟠 High severity issues found"
+          else                              STATUS="🟢 No critical/high issues"
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
+          ## 🛡️ Website Security Scan Results
+
+          | Field | Value |
+          |-------|-------|
+          | **Status** | $STATUS |
+          | **Security Grade** | **$GRADE** |
+          | **Security Score** | **$SCORE / 100** |
+          | **Critical Issues** | $CRITICAL |
+          | **High Issues** | $HIGH |
+
+          ### Reports
+          Download the full reports from the **Artifacts** section of this workflow run.
+
+          - **Markdown report**: Human-readable findings
+          - **HTML report**: Visual dashboard (open in browser)
+          - **JSON report**: Machine-readable, CI/CD integrations
+          - **SARIF report**: Visible in GitHub Security → Code scanning tab
+
+          ---
+          *Universal Web Security Scanner v3.0*
+          SUMMARY
+
+      # ── Fail the pipeline on critical findings ───────────────────────────────
+      - name: Fail on critical findings
+        if: steps.scan.outputs.critical != '' && steps.scan.outputs.critical != '0'
+        run: |
+          echo "::error::Security scan found ${{ steps.scan.outputs.critical }} critical issue(s). Review the Security tab and scan artifacts."
+          exit 1
+
+  # ── Scheduled full scan (weekly, all modules) ──────────────────────────────
+  scheduled-full-scan:
+    name: Weekly Full Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install WebSecurityScanner
+        run: |
+          chmod +x website-security-script.sh lib/*.sh scans/*.sh 2>/dev/null || true
+
+      - name: Run full scan
+        run: |
+          ./website-security-script.sh . \
+            --mode all \
+            --output all \
+            --no-email \
+            2>&1 | tee full-scan-output.log || true
+
+      - name: Upload weekly scan reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-security-scan-${{ github.run_id }}
+          path: |
+            security-report_*
+            full-scan-output.log
+          retention-days: 365
