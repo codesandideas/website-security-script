@@ -9,8 +9,8 @@ show_usage() {
     echo "  <path>                    Path to the website root directory"
     echo ""
     echo "Scan Options:"
-    echo "  --url <url>               Base URL of the site for HTTP accessibility checks (e.g. https://example.com)
-  --webhook <url>           Send report to a webhook endpoint via POST"
+    echo "  --url <url>               Base URL of the site for HTTP accessibility checks (e.g. https://example.com)"
+    echo "  --webhook <url>           Send report to a webhook endpoint via POST"
     echo "  --api-key <key>           API key for webhook authentication"
     echo "  --email <address>         Recipient email for this scan"
     echo "  --no-email                Skip email notification for this scan"
@@ -22,6 +22,19 @@ show_usage() {
     echo "                            Custom:    '0 2 * * *' (cron expression)"
     echo "  --remove-cron             Remove all webscan cron jobs"
     echo "  --list-cron               List active webscan cron jobs"
+    echo ""
+    echo "Scan Scope (Speed & Compatibility):"
+    echo "  --mode <mode>             Scan scope — one of:"
+    echo "                              all    = full scan, all 15 sections (default)"
+    echo "                              files  = file-based checks only (shared-hosting safe)"
+    echo "                              server = server-level checks only (needs root access)"
+    echo "  --skip <module>           Skip one module for this run (repeatable)"
+    echo "  --only <module>           Run only this one module"
+    echo ""
+    echo "  Module names for --skip / --only:"
+    echo "    FILE-BASED:   malware  suspicious  obfuscation  integrity  framework"
+    echo "                  dependencies  permissions  secrets  modified-files"
+    echo "    SERVER-LEVEL: server-config  network  ssl  database  container  logging"
     echo ""
     echo "Configuration:"
     echo "  --set-email <address>     Save default email address"
@@ -35,6 +48,11 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  webscan /var/www/html"
+    echo "  webscan /var/www/html --mode files           # Shared-hosting safe scan"
+    echo "  webscan /var/www/html --mode server          # Server config audit only"
+    echo "  webscan /var/www/html --skip database        # Skip DB checks"
+    echo "  webscan /var/www/html --skip database --skip container"
+    echo "  webscan /var/www/html --only malware         # Malware check only"
     echo "  webscan /var/www/html --email admin@site.com"
     echo "  webscan --set-email admin@site.com"
     echo "  webscan /var/www/html --background"
@@ -57,6 +75,80 @@ parse_args() {
             --no-email)      NO_EMAIL=true; shift ;;
             --no-recommendations) SHOW_RECOMMENDATIONS=false; shift ;;
             --no-allowlist)      USE_ALLOWLIST=false; shift ;;
+            --mode)
+                SCAN_MODE="$2"
+                case "$SCAN_MODE" in
+                    files)
+                        # Disable all server-level modules — safe on shared hosting
+                        SCAN_08_SERVER_CONFIG=false
+                        SCAN_10_NETWORK=false
+                        SCAN_12_SSL=false
+                        SCAN_13_DATABASE=false
+                        SCAN_14_CONTAINER=false
+                        SCAN_15_LOGGING=false
+                        ;;
+                    server)
+                        # Disable all file-based modules — only run server checks
+                        SCAN_01_MALWARE=false
+                        SCAN_02_SUSPICIOUS=false
+                        SCAN_03_OBFUSCATION=false
+                        SCAN_04_INTEGRITY=false
+                        SCAN_05_FRAMEWORK=false
+                        SCAN_06_DEPENDENCIES=false
+                        SCAN_07_PERMISSIONS=false
+                        SCAN_09_SECRETS=false
+                        SCAN_11_MODIFIED_FILES=false
+                        ;;
+                    all) ;;  # Default — nothing to change
+                    *) echo "Unknown --mode '$2'. Valid values: all, files, server"; exit 1 ;;
+                esac
+                shift 2 ;;
+            --skip)
+                case "$2" in
+                    malware)        SCAN_01_MALWARE=false ;;
+                    suspicious)     SCAN_02_SUSPICIOUS=false ;;
+                    obfuscation)    SCAN_03_OBFUSCATION=false ;;
+                    integrity)      SCAN_04_INTEGRITY=false ;;
+                    framework)      SCAN_05_FRAMEWORK=false ;;
+                    dependencies)   SCAN_06_DEPENDENCIES=false ;;
+                    permissions)    SCAN_07_PERMISSIONS=false ;;
+                    server-config)  SCAN_08_SERVER_CONFIG=false ;;
+                    secrets)        SCAN_09_SECRETS=false ;;
+                    network)        SCAN_10_NETWORK=false ;;
+                    modified-files) SCAN_11_MODIFIED_FILES=false ;;
+                    ssl)            SCAN_12_SSL=false ;;
+                    database)       SCAN_13_DATABASE=false ;;
+                    container)      SCAN_14_CONTAINER=false ;;
+                    logging)        SCAN_15_LOGGING=false ;;
+                    *) echo "Unknown module '$2'. Run --help to see valid module names."; exit 1 ;;
+                esac
+                shift 2 ;;
+            --only)
+                # Disable everything first, then re-enable the one requested
+                SCAN_01_MALWARE=false; SCAN_02_SUSPICIOUS=false; SCAN_03_OBFUSCATION=false
+                SCAN_04_INTEGRITY=false; SCAN_05_FRAMEWORK=false; SCAN_06_DEPENDENCIES=false
+                SCAN_07_PERMISSIONS=false; SCAN_08_SERVER_CONFIG=false; SCAN_09_SECRETS=false
+                SCAN_10_NETWORK=false; SCAN_11_MODIFIED_FILES=false; SCAN_12_SSL=false
+                SCAN_13_DATABASE=false; SCAN_14_CONTAINER=false; SCAN_15_LOGGING=false
+                case "$2" in
+                    malware)        SCAN_01_MALWARE=true ;;
+                    suspicious)     SCAN_02_SUSPICIOUS=true ;;
+                    obfuscation)    SCAN_03_OBFUSCATION=true ;;
+                    integrity)      SCAN_04_INTEGRITY=true ;;
+                    framework)      SCAN_05_FRAMEWORK=true ;;
+                    dependencies)   SCAN_06_DEPENDENCIES=true ;;
+                    permissions)    SCAN_07_PERMISSIONS=true ;;
+                    server-config)  SCAN_08_SERVER_CONFIG=true ;;
+                    secrets)        SCAN_09_SECRETS=true ;;
+                    network)        SCAN_10_NETWORK=true ;;
+                    modified-files) SCAN_11_MODIFIED_FILES=true ;;
+                    ssl)            SCAN_12_SSL=true ;;
+                    database)       SCAN_13_DATABASE=true ;;
+                    container)      SCAN_14_CONTAINER=true ;;
+                    logging)        SCAN_15_LOGGING=true ;;
+                    *) echo "Unknown module '$2'. Run --help to see valid module names."; exit 1 ;;
+                esac
+                shift 2 ;;
             --background)    BACKGROUND=true; shift ;;
             --cron)          CRON_SCHEDULE="$2"; shift 2 ;;
             --list-cron)     cron_list ;;
@@ -108,6 +200,7 @@ parse_args() {
         [[ "$NO_EMAIL" == true ]] && EXTRA_ARGS+=" --no-email"
         [[ "$SHOW_RECOMMENDATIONS" == false ]] && EXTRA_ARGS+=" --no-recommendations"
         [[ "$USE_ALLOWLIST" == false ]] && EXTRA_ARGS+=" --no-allowlist"
+        [[ "$SCAN_MODE" != "all" ]] && EXTRA_ARGS+=" --mode $SCAN_MODE"
         cron_add "$CRON_SCHEDULE" "$SCAN_DIR" $EXTRA_ARGS
     fi
 
@@ -128,6 +221,7 @@ parse_args() {
         [[ "$NO_EMAIL" == true ]] && BG_ARGS+=(--no-email)
         [[ "$SHOW_RECOMMENDATIONS" == false ]] && BG_ARGS+=(--no-recommendations)
         [[ "$USE_ALLOWLIST" == false ]] && BG_ARGS+=(--no-allowlist)
+        [[ "$SCAN_MODE" != "all" ]] && BG_ARGS+=(--mode "$SCAN_MODE")
 
         echo ""
         echo -e "${GREEN}[OK]${NC} Scan launched in background!"

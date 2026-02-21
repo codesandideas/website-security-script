@@ -236,6 +236,33 @@ EOF
     fi
 }
 
+# ── Module Gating ─────────────────────────────────────────────────────────────
+# Returns 0 (true) when a section is enabled, 1 (false) when disabled.
+# Uses bash indirect expansion so no subshell is spawned.
+is_module_enabled() {
+    local sec_num="$1"
+    local var_name
+    case "$sec_num" in
+        1)  var_name="SCAN_01_MALWARE" ;;
+        2)  var_name="SCAN_02_SUSPICIOUS" ;;
+        3)  var_name="SCAN_03_OBFUSCATION" ;;
+        4)  var_name="SCAN_04_INTEGRITY" ;;
+        5)  var_name="SCAN_05_FRAMEWORK" ;;
+        6)  var_name="SCAN_06_DEPENDENCIES" ;;
+        7)  var_name="SCAN_07_PERMISSIONS" ;;
+        8)  var_name="SCAN_08_SERVER_CONFIG" ;;
+        9)  var_name="SCAN_09_SECRETS" ;;
+        10) var_name="SCAN_10_NETWORK" ;;
+        11) var_name="SCAN_11_MODIFIED_FILES" ;;
+        12) var_name="SCAN_12_SSL" ;;
+        13) var_name="SCAN_13_DATABASE" ;;
+        14) var_name="SCAN_14_CONTAINER" ;;
+        15) var_name="SCAN_15_LOGGING" ;;
+        *)  return 0 ;;  # Unknown section — enable by default
+    esac
+    [[ "${!var_name}" != false ]]
+}
+
 has_framework() {
     local fw="$1"
     for f in "${FRAMEWORKS[@]}"; do

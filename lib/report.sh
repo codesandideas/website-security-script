@@ -4,6 +4,14 @@ init_report() {
     SCAN_START_TIME=$(date +%s)
     FW_LIST=$(IFS=', '; echo "${FRAMEWORKS[*]}")
 
+    # Determine scan scope label for the report header
+    local scope_label
+    case "$SCAN_MODE" in
+        files)  scope_label="File-Based Scan (shared-hosting mode)" ;;
+        server) scope_label="Server-Level Scan" ;;
+        *)      scope_label="Full Scan (all modules)" ;;
+    esac
+
     cat > "$REPORT_FILE" <<EOF
 # 🛡️ Website Security Scan Report
 
@@ -13,6 +21,7 @@ init_report() {
 | **Scan Date** | $(date '+%B %d, %Y at %H:%M:%S %Z') |
 | **Hostname** | $(hostname 2>/dev/null || echo "N/A") |
 | **Detected Framework(s)** | $FW_LIST |
+| **Scan Scope** | $scope_label |
 | **Scanner** | Universal Web Security Scanner v3.0 |
 
 ---
@@ -20,50 +29,68 @@ init_report() {
 ## Table of Contents
 
 1. [Executive Summary](#executive-summary)
-2. [Malware & Backdoor Detection](#1-malware--backdoor-detection)
-3. [Suspicious Files & Code Patterns](#2-suspicious-files--code-patterns)
-4. [Obfuscated & Encoded Code](#3-obfuscated--encoded-code)
-5. [File Integrity & Anomalies](#4-file-integrity--anomalies)
-6. [Framework-Specific Audit](#5-framework-specific-audit)
-7. [Dependency & Supply Chain Risks](#6-dependency--supply-chain-risks)
-8. [File Permissions Audit](#7-file-permissions-audit)
-9. [Server Configuration Issues](#8-server-configuration-issues)
-10. [Secrets & Credential Exposure](#9-secrets--credential-exposure)
-11. [Network & Access Security](#10-network--access-security)
-12. [Recently Modified Files](#11-recently-modified-files)
-13. [SSL/TLS Configuration](#12-ssltls-configuration)
-14. [Database Security](#13-database-security)
-15. [Container Security](#14-container-security)
-16. [Logging & Monitoring](#15-logging--monitoring)
-17. [Recommendations](#recommendations)
-
----
-
 EOF
 
-    # Remove recommendations TOC entry if hidden
-    if [[ "$SHOW_RECOMMENDATIONS" != true ]]; then
-        sed -i '/\[Recommendations\](#recommendations)/d' "$REPORT_FILE"
-    fi
+    # Build TOC dynamically — only include enabled sections
+    local toc_num=2
+    is_module_enabled 1  && echo "${toc_num}. [Malware & Backdoor Detection](#1-malware--backdoor-detection)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 2  && echo "${toc_num}. [Suspicious Files & Code Patterns](#2-suspicious-files--code-patterns)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 3  && echo "${toc_num}. [Obfuscated & Encoded Code](#3-obfuscated--encoded-code)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 4  && echo "${toc_num}. [File Integrity & Anomalies](#4-file-integrity--anomalies)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 5  && echo "${toc_num}. [Framework-Specific Audit](#5-framework-specific-audit)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 6  && echo "${toc_num}. [Dependency & Supply Chain Risks](#6-dependency--supply-chain-risks)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 7  && echo "${toc_num}. [File Permissions Audit](#7-file-permissions-audit)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 8  && echo "${toc_num}. [Server Configuration Issues](#8-server-configuration-issues)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 9  && echo "${toc_num}. [Secrets & Credential Exposure](#9-secrets--credential-exposure)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 10 && echo "${toc_num}. [Network & Access Security](#10-network--access-security)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 11 && echo "${toc_num}. [Recently Modified Files](#11-recently-modified-files)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 12 && echo "${toc_num}. [SSL/TLS Configuration](#12-ssltls-configuration)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 13 && echo "${toc_num}. [Database Security](#13-database-security)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 14 && echo "${toc_num}. [Container Security](#14-container-security)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    is_module_enabled 15 && echo "${toc_num}. [Logging & Monitoring](#15-logging--monitoring)" >> "$REPORT_FILE" && toc_num=$((toc_num+1))
+    [[ "$SHOW_RECOMMENDATIONS" == true ]] && echo "${toc_num}. [Recommendations](#recommendations)" >> "$REPORT_FILE"
+
+    echo "" >> "$REPORT_FILE"
+    echo "---" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
 }
 
 run_parallel_scans() {
     REAL_REPORT_FILE="$REPORT_FILE"
 
-    # Launch sections with limited parallelism
+    # Count how many modules are active so we can tune parallelism
+    local _active=0
+    for _n in $(seq 1 15); do is_module_enabled "$_n" && _active=$((_active+1)); done
+
+    # For smaller scan sets (files-only mode = 9 sections, server-only = 6)
+    # we can safely raise parallelism since there are fewer competing jobs.
+    local _effective_parallel=$MAX_PARALLEL
+    if [[ $_active -le 6 ]]; then
+        _effective_parallel=$(( MAX_PARALLEL < 6 ? 6 : MAX_PARALLEL ))
+    elif [[ $_active -le 9 ]]; then
+        _effective_parallel=$(( MAX_PARALLEL < 5 ? 5 : MAX_PARALLEL ))
+    fi
+
+    log "Running $_active scan module(s) with up to $_effective_parallel in parallel..."
+
+    # Launch enabled sections with controlled parallelism
     _running_jobs=0
     for _sec_num in $(seq 1 15); do
+        if ! is_module_enabled "$_sec_num"; then
+            log "  [skip] Section $_sec_num (disabled)"
+            continue
+        fi
         _sec_file="$TEMP_DIR/section_$(printf '%02d' $_sec_num).md"
         "scan_section_${_sec_num}" "$_sec_file" &
         _running_jobs=$((_running_jobs + 1))
-        if [[ $_running_jobs -ge $MAX_PARALLEL ]]; then
+        if [[ $_running_jobs -ge $_effective_parallel ]]; then
             wait -n 2>/dev/null || wait
             _running_jobs=$((_running_jobs - 1))
         fi
     done
     wait
 
-    # Assemble final report in order
+    # Assemble final report in order (only files that were actually written)
     for _sec_num in $(seq 1 15); do
         _sec_file="$TEMP_DIR/section_$(printf '%02d' $_sec_num).md"
         if [[ -s "$_sec_file" ]]; then

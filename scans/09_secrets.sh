@@ -32,28 +32,37 @@ EOF
             | grep -oP "https?://[^'\"]*" | head -1 || true)
     fi
 
-    FOUND_SENSITIVE=""
-    for P in "${SENSITIVE_PATTERNS[@]}"; do
-        MATCHES=$(find "$SCAN_DIR" -maxdepth 3 -name "$P" -type f 2>/dev/null | \
-            grep -v "node_modules\|vendor/\|venv/\|\.env\.example\|\.env\.sample" || true)
-        while IFS= read -r F; do
-            [[ -z "$F" ]] && continue
-            FSIZE=$(stat -c%s "$F" 2>/dev/null || echo "?")
-            if [[ "$P" == "error_log" ]]; then
-                if [[ -n "$EFFECTIVE_URL" ]]; then
-                    REL_PATH="${F#$SCAN_DIR/}"
-                    CHECK_URL="${EFFECTIVE_URL%/}/${REL_PATH}"
-                    HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 "$CHECK_URL" 2>/dev/null || echo "000")
-                    [[ "$HTTP_CODE" != "200" ]] && continue
-                    FOUND_SENSITIVE+="$F ($FSIZE bytes) — publicly accessible (HTTP $HTTP_CODE)"$'\n'
-                else
-                    FOUND_SENSITIVE+="$F ($FSIZE bytes) — HTTP check skipped (use --url to verify)"$'\n'
-                fi
-            else
-                FOUND_SENSITIVE+="$F ($FSIZE bytes)"$'\n'
-            fi
-        done <<< "$MATCHES"
+    # Build a single find call with all sensitive patterns OR'd together.
+    # This replaces one find call per pattern (~25 processes) with a single
+    # invocation, which is measurably faster on large directory trees.
+    local _find_name_args=()
+    for _sp in "${SENSITIVE_PATTERNS[@]}"; do
+        [[ ${#_find_name_args[@]} -gt 0 ]] && _find_name_args+=(-o)
+        _find_name_args+=(-name "$_sp")
     done
+
+    ALL_SENSITIVE_HITS=$(find "$SCAN_DIR" -maxdepth 3 -type f \( "${_find_name_args[@]}" \) \
+        2>/dev/null | grep -v "node_modules\|vendor/\|venv/\|\.env\.example\|\.env\.sample" || true)
+
+    FOUND_SENSITIVE=""
+    while IFS= read -r F; do
+        [[ -z "$F" ]] && continue
+        FSIZE=$(stat -c%s "$F" 2>/dev/null || echo "?")
+        FNAME=$(basename "$F")
+        if [[ "$FNAME" == "error_log" ]]; then
+            if [[ -n "$EFFECTIVE_URL" ]]; then
+                REL_PATH="${F#$SCAN_DIR/}"
+                CHECK_URL="${EFFECTIVE_URL%/}/${REL_PATH}"
+                HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 5 "$CHECK_URL" 2>/dev/null || echo "000")
+                [[ "$HTTP_CODE" != "200" ]] && continue
+                FOUND_SENSITIVE+="$F ($FSIZE bytes) — publicly accessible (HTTP $HTTP_CODE)"$'\n'
+            else
+                FOUND_SENSITIVE+="$F ($FSIZE bytes) — HTTP check skipped (use --url to verify)"$'\n'
+            fi
+        else
+            FOUND_SENSITIVE+="$F ($FSIZE bytes)"$'\n'
+        fi
+    done <<< "$ALL_SENSITIVE_HITS"
 
     SQL_DUMPS=$(find "$SCAN_DIR" -maxdepth 3 \( -name "*.sql" -o -name "*.sql.gz" \) -type f \
         2>/dev/null | grep -v "node_modules\|vendor/" | head -10 || true)
