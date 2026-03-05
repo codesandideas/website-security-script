@@ -140,6 +140,7 @@ Scan Options:
   --email <address>         Recipient email for this scan
   --no-email                Skip email notification for this scan
   --no-recommendations      Hide recommendations section from report
+  --no-allowlist            Disable built-in allowlisting (scan everything, no exclusions)
   --background              Run scan in background (survives terminal close)
   --cron <schedule>         Set up a cron job for recurring scans
                             Shortcuts: hourly, daily, weekly, monthly
@@ -160,7 +161,7 @@ Configuration:
 
 ### Configuration
 
-The scanner stores persistent settings in `~/.config/webscan/config`. Set defaults so you don't have to pass options every time:
+The scanner stores persistent settings in `~/.config/webscan/config` and a global path exclusion list in `~/.config/webscan/allowlist`. Set defaults so you don't have to pass options every time:
 
 ```bash
 webscan --set-email admin@example.com    # Save default email
@@ -177,6 +178,47 @@ Override any saved default on a per-scan basis:
 webscan /path --email other@mail.com     # Use a different email for this scan
 webscan /path --no-email                 # Skip email for this scan
 ```
+
+## 🚫 Excluding Paths
+
+The scanner supports path exclusions at two levels: a per-project dotfile and a global allowlist file.
+
+### `.scanignore` — project-level exclusions
+
+Place a `.scanignore` file in the root of the directory you are scanning. One pattern per line; `#` starts a comment. The `*` wildcard is supported.
+
+```
+# .scanignore — place in your website root
+vendor/
+node_modules/
+storage/framework/
+wp-content/uploads/
+tests/
+wp-content/themes/my-theme/assets/js/vendor.*   # glob * supported
+```
+
+The scanner checks for `.scanignore` in the scan root first. If none is found it falls back to `~/.config/webscan/allowlist` for site-wide defaults.
+
+### `~/.config/webscan/allowlist` — global exclusions
+
+Any paths or patterns listed here are excluded from every scan that does not have its own `.scanignore`.
+
+### `--no-allowlist` — disable all exclusions
+
+To run a scan with no exclusions at all (including the built-in WordPress and Laravel core filters):
+
+```bash
+webscan /var/www/html --no-allowlist
+```
+
+### Built-in exclusions
+
+Even without a `.scanignore` the scanner automatically suppresses noise from:
+
+- **WordPress**: verified core files (`wp-admin/`, `wp-includes/`) matched against official checksums, with a path-based fallback when offline
+- **Laravel**: known boilerplate paths (`bootstrap/`, `routes/`, `storage/framework/`, etc.)
+
+---
 
 ## 🔍 Scan Categories
 
