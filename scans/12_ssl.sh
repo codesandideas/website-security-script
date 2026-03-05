@@ -92,7 +92,17 @@ EOF
 
     # ── 12c. Weak TLS Protocols ───────────────────────────────────────────────────
     if [[ -n "$SSL_CONFIG_FILES" ]]; then
-        WEAK_TLS=$(grep -hEin 'TLSv1[^.]|TLSv1\.0|TLSv1\.1|SSLv2|SSLv3|SSLProtocol.*all' $SSL_CONFIG_FILES 2>/dev/null | grep -iv 'TLSv1\.[23]' || true)
+        WEAK_TLS=$(grep -lEi 'TLSv1[^.]|TLSv1\.0|TLSv1\.1|SSLv2|SSLv3|SSLProtocol.*all' $SSL_CONFIG_FILES 2>/dev/null | sort -u || true)
+        # Verify the matches aren't just TLSv1.2/1.3
+        if [[ -n "$WEAK_TLS" ]]; then
+            WEAK_TLS_VERIFIED=""
+            for _f in $WEAK_TLS; do
+                if grep -Ei 'TLSv1[^.]|TLSv1\.0|TLSv1\.1|SSLv2|SSLv3|SSLProtocol.*all' "$_f" 2>/dev/null | grep -qiv 'TLSv1\.[23]'; then
+                    WEAK_TLS_VERIFIED="$WEAK_TLS_VERIFIED$_f"$'\n'
+                fi
+            done
+            WEAK_TLS="$WEAK_TLS_VERIFIED"
+        fi
         if [[ -n "$WEAK_TLS" ]]; then
             finding "high" "Weak TLS Protocols Enabled" \
                 "Server configuration allows deprecated TLS protocols (TLSv1.0, TLSv1.1, SSLv2, or SSLv3)." \
@@ -106,7 +116,17 @@ EOF
 
     # ── 12d. Weak Cipher Suites ───────────────────────────────────────────────────
     if [[ -n "$SSL_CONFIG_FILES" ]]; then
-        WEAK_CIPHERS=$(grep -hEin 'RC4|DES|MD5|EXPORT|NULL|aNULL|eNULL' $SSL_CONFIG_FILES 2>/dev/null | grep -i 'ssl_ciphers\|SSLCipherSuite' || true)
+        WEAK_CIPHERS=$(grep -lEi 'RC4|DES|MD5|EXPORT|NULL|aNULL|eNULL' $SSL_CONFIG_FILES 2>/dev/null | sort -u || true)
+        # Verify the matches are in cipher config lines
+        if [[ -n "$WEAK_CIPHERS" ]]; then
+            WEAK_CIPHERS_VERIFIED=""
+            for _f in $WEAK_CIPHERS; do
+                if grep -Ei 'RC4|DES|MD5|EXPORT|NULL|aNULL|eNULL' "$_f" 2>/dev/null | grep -qi 'ssl_ciphers\|SSLCipherSuite'; then
+                    WEAK_CIPHERS_VERIFIED="$WEAK_CIPHERS_VERIFIED$_f"$'\n'
+                fi
+            done
+            WEAK_CIPHERS="$WEAK_CIPHERS_VERIFIED"
+        fi
         if [[ -n "$WEAK_CIPHERS" ]]; then
             finding "medium" "Weak Cipher Suites Configured" \
                 "Server configuration includes weak or insecure cipher suites (RC4, DES, MD5, EXPORT, NULL)." \

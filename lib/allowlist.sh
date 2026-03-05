@@ -117,9 +117,8 @@ filter_laravel_core() {
 # Filter out generic PHP framework boilerplate (tiny index.php bootstrappers)
 filter_php_core() {
     while IFS= read -r line; do
-        # Extract file path (first field before ':' if grep -n output, or whole line if file list)
-        local filepath
-        filepath=$(echo "$line" | cut -d: -f1)
+        # Extract file path (whole line since output is file paths only)
+        local filepath="$line"
         # Skip tiny index.php files (≤5 lines) that are just bootstrappers
         if [[ "$filepath" == *"/index.php" || "$filepath" == *"index.php" ]] && \
            [[ -f "$filepath" ]] && [[ $(wc -l < "$filepath" 2>/dev/null || echo 999) -le 5 ]]; then

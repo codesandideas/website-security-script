@@ -89,7 +89,7 @@ EOF
         'xox[bpras]-[A-Za-z0-9-]+'
     )
     CRED_REGEX=$(IFS='|'; echo "${CRED_PATTERNS[*]}")
-    CRED_RESULTS=$(grep -rnEi "$CRED_REGEX" "$SCAN_DIR" \
+    CRED_RESULTS=$(grep -rlEi "$CRED_REGEX" "$SCAN_DIR" \
         --include="*.php" --include="*.py" --include="*.js" --include="*.ts" \
         --include="*.rb" --include="*.yml" --include="*.yaml" --include="*.json" \
         --include="*.conf" --include="*.cfg" --include="*.ini" \

@@ -22,11 +22,11 @@ EOF
                 "Add \`Options -Indexes\` to .htaccess."
         fi
 
-        SUSPICIOUS_HTACCESS=$(grep -Ein 'RewriteCond.*HTTP_USER_AGENT.*(google|bot|crawl|spider).*RewriteRule.*http' "$HTACCESS" 2>/dev/null || true)
+        SUSPICIOUS_HTACCESS=$(grep -Ei 'RewriteCond.*HTTP_USER_AGENT.*(google|bot|crawl|spider).*RewriteRule.*http' "$HTACCESS" 2>/dev/null || true)
         if [[ -n "$SUSPICIOUS_HTACCESS" ]]; then
             finding "critical" "Suspicious Bot-Targeting Redirect Rules" \
                 "SEO spam redirects targeting search bots." \
-                "$SUSPICIOUS_HTACCESS" \
+                "$HTACCESS" \
                 "Remove these rules immediately."
         fi
     fi

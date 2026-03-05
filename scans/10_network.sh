@@ -33,7 +33,7 @@ EOF
     done
 
     # CORS wildcard
-    CORS_WILDCARD=$(grep -rnEi 'Access-Control-Allow-Origin.*\*|cors.*origin.*\*' \
+    CORS_WILDCARD=$(grep -rlEi 'Access-Control-Allow-Origin.*\*|cors.*origin.*\*' \
         "$SCAN_DIR" --include="*.php" --include="*.js" --include="*.py" --include="*.conf" \
         2>/dev/null | grep -v "node_modules\|vendor/\|\.git/" | filter_results | head -10 || true)
 
@@ -47,11 +47,11 @@ EOF
     # Suspicious crontab
     if command -v crontab &>/dev/null; then
         CRON_ENTRIES=$(crontab -l 2>/dev/null || true)
-        CRON_SUS=$(echo "$CRON_ENTRIES" | grep -Ei 'wget|curl.*\|.*sh|base64|eval|python.*-c' 2>/dev/null || true)
-        if [[ -n "$CRON_SUS" ]]; then
+        CRON_SUS=$(echo "$CRON_ENTRIES" | grep -ci 'wget\|curl.*|.*sh\|base64\|eval\|python.*-c' 2>/dev/null || true)
+        if [[ "$CRON_SUS" -gt 0 ]]; then
             finding "high" "Suspicious Crontab Entries" \
-                "Entries that download and execute remote code." \
-                "$CRON_SUS" \
+                "Found $CRON_SUS crontab entries that download and execute remote code." \
+                "Run 'crontab -l' to review the suspicious entries." \
                 "Review and remove unauthorized cron jobs."
         fi
     fi

@@ -87,9 +87,9 @@ EOF
     if [[ -n "$LOG_FILES_TO_CHECK" ]]; then
         for log_file in $LOG_FILES_TO_CHECK; do
             # Check last 1000 lines for sensitive patterns
-            SENSITIVE=$(tail -1000 "$log_file" 2>/dev/null | grep -Ein 'password=|passwd=|token=|api_key=|secret=|credit.card|ssn=|\b[0-9]{13,16}\b' 2>/dev/null | head -5 || true)
-            if [[ -n "$SENSITIVE" ]]; then
-                SENSITIVE_IN_LOGS="$SENSITIVE_IN_LOGS\n$log_file:\n$SENSITIVE"
+            SENSITIVE=$(tail -1000 "$log_file" 2>/dev/null | grep -ci 'password=\|passwd=\|token=\|api_key=\|secret=\|credit.card\|ssn=' 2>/dev/null || true)
+            if [[ "$SENSITIVE" -gt 0 ]]; then
+                SENSITIVE_IN_LOGS="$SENSITIVE_IN_LOGS\n$log_file ($SENSITIVE matches)"
             fi
         done
     fi

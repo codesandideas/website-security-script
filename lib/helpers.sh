@@ -128,7 +128,7 @@ get_file_size() {
 safe_grep() {
     local pattern="$1"
     shift
-    $TIMEOUT_CMD grep -rnEi "$pattern" "$@" 2>/dev/null | exclude_noise | head -100 || true
+    $TIMEOUT_CMD grep -rlEi "$pattern" "$@" 2>/dev/null | exclude_noise | head -100 || true
 }
 
 safe_find() {

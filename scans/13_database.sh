@@ -67,15 +67,15 @@ EOF
         \) 2>/dev/null | grep -v "node_modules\|vendor/\|\.git/\|venv/" | head -20); do
 
         # Check for root user in DB config
-        ROOT_DB=$(grep -Ein "DB_USER.*root|'username'.*root|DB_USERNAME.*root|user.*=.*root" "$cfg_file" 2>/dev/null | grep -iv 'rootdir\|webroot\|docroot\|app_root' || true)
+        ROOT_DB=$(grep -Ei "DB_USER.*root|'username'.*root|DB_USERNAME.*root|user.*=.*root" "$cfg_file" 2>/dev/null | grep -iv 'rootdir\|webroot\|docroot\|app_root' || true)
         if [[ -n "$ROOT_DB" ]]; then
-            DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file:\n$ROOT_DB"
+            DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file (root database user)"
         fi
 
         # Check for empty passwords
-        EMPTY_PASS=$(grep -Ein "DB_PASSWORD\s*=\s*$|DB_PASSWORD\s*=\s*['\"]'*['\"]|'password'\s*=>\s*''|DATABASE_PASSWORD\s*=\s*$" "$cfg_file" 2>/dev/null || true)
+        EMPTY_PASS=$(grep -Ei "DB_PASSWORD\s*=\s*$|DB_PASSWORD\s*=\s*['\"]'*['\"]|'password'\s*=>\s*''|DATABASE_PASSWORD\s*=\s*$" "$cfg_file" 2>/dev/null || true)
         if [[ -n "$EMPTY_PASS" ]]; then
-            DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file:\n$EMPTY_PASS"
+            DB_CRED_ISSUES="$DB_CRED_ISSUES\n$cfg_file (empty password)"
         fi
     done
 

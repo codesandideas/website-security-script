@@ -321,7 +321,7 @@ EOF
         echo "" >> "$REPORT_FILE"
 
         # Hardcoded secrets
-        HARDCODED_SECRETS=$(grep -rnEi \
+        HARDCODED_SECRETS=$(grep -rlEi \
             '(api_key|apikey|secret|password|token|auth)\s*[:=]\s*["\x27][A-Za-z0-9+/=_-]{16,}' \
             "$SCAN_DIR" --include="*.js" --include="*.ts" --include="*.mjs" \
             2>/dev/null | grep -v "node_modules\|\.next/\|dist/\|build/\|\.env\|\.example" | head -20 || true)
@@ -398,7 +398,7 @@ EOF
         echo "### Flask Audit" >> "$REPORT_FILE"
         echo "" >> "$REPORT_FILE"
 
-        FLASK_DEBUG=$(grep -rnEi 'app\.run\s*\(.*debug\s*=\s*True\|FLASK_DEBUG\s*=\s*1' \
+        FLASK_DEBUG=$(grep -rlEi 'app\.run\s*\(.*debug\s*=\s*True\|FLASK_DEBUG\s*=\s*1' \
             "$SCAN_DIR" --include="*.py" 2>/dev/null | grep -v "venv/" | head -10 || true)
 
         if [[ -n "$FLASK_DEBUG" ]]; then
@@ -408,7 +408,7 @@ EOF
                 "Never use debug=True in production."
         fi
 
-        FLASK_SECRET=$(grep -rnEi "secret_key\s*=\s*['\"]?(dev|secret|changeme|test)" \
+        FLASK_SECRET=$(grep -rlEi "secret_key\s*=\s*['\"]?(dev|secret|changeme|test)" \
             "$SCAN_DIR" --include="*.py" 2>/dev/null | grep -v "venv/" | head -5 || true)
 
         if [[ -n "$FLASK_SECRET" ]]; then
@@ -436,7 +436,7 @@ EOF
             fi
         fi
 
-        RAILS_DEV=$(grep -rnEi "consider_all_requests_local\s*=\s*true" \
+        RAILS_DEV=$(grep -rlEi "consider_all_requests_local\s*=\s*true" \
             "$SCAN_DIR/config" --include="*.rb" 2>/dev/null | grep "production" | head -5 || true)
         if [[ -n "$RAILS_DEV" ]]; then
             finding "high" "Rails Production Shows Full Error Details" \

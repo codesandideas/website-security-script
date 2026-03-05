@@ -172,15 +172,9 @@ EOF
 
         SQLI_RESULTS=""
         if [[ -n "$SQLI_CANDIDATES" ]]; then
-            # Step 1: find matching files (grep -l stops at first match per file — fast)
-            SQLI_MATCHING=$(echo "$SQLI_CANDIDATES" \
-                | xargs -d '\n' grep -lE "$SQLI_REGEX" 2>/dev/null | head -30 || true)
-            # Step 2: extract up to 3 lines per matched file only
-            if [[ -n "$SQLI_MATCHING" ]]; then
-                SQLI_RESULTS=$(echo "$SQLI_MATCHING" \
-                    | xargs -d '\n' grep -nE -m 3 "$SQLI_REGEX" 2>/dev/null \
-                    | filter_results | head -30 || true)
-            fi
+            SQLI_RESULTS=$(echo "$SQLI_CANDIDATES" \
+                | xargs -d '\n' grep -lE "$SQLI_REGEX" 2>/dev/null \
+                | filter_results | head -30 || true)
         fi
 
         if [[ -n "$SQLI_RESULTS" ]]; then
@@ -225,17 +219,9 @@ EOF
 
         XSS_RESULTS=""
         if [[ -n "$XSS_CANDIDATES" ]]; then
-            # Step 1: find files that contain any XSS pattern.
-            # grep -l exits each file on first match — far faster than scanning all lines.
-            XSS_MATCHING=$(echo "$XSS_CANDIDATES" \
-                | xargs -d '\n' grep -lE "$XSS_REGEX" 2>/dev/null | head -30 || true)
-            # Step 2: collect up to 3 matching lines per matched file only.
-            # No -i flag needed — these identifiers are case-sensitive.
-            if [[ -n "$XSS_MATCHING" ]]; then
-                XSS_RESULTS=$(echo "$XSS_MATCHING" \
-                    | xargs -d '\n' grep -nE -m 3 "$XSS_REGEX" 2>/dev/null \
-                    | filter_results | head -30 || true)
-            fi
+            XSS_RESULTS=$(echo "$XSS_CANDIDATES" \
+                | xargs -d '\n' grep -lE "$XSS_REGEX" 2>/dev/null \
+                | filter_results | head -30 || true)
         fi
 
         if [[ -n "$XSS_RESULTS" ]]; then

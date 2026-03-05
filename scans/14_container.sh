@@ -62,7 +62,7 @@ EOF
 
         # Also check compose files for socket mounts
         if [[ -n "$COMPOSE_FILES" ]]; then
-            SOCK_MOUNT=$(grep -hEn 'docker\.sock' $COMPOSE_FILES 2>/dev/null || true)
+            SOCK_MOUNT=$(grep -l 'docker\.sock' $COMPOSE_FILES 2>/dev/null || true)
             if [[ -n "$SOCK_MOUNT" ]]; then
                 finding "high" "Docker Socket Mounted in Container" \
                     "Docker socket is mounted into a container, which can allow container escape." \
@@ -75,17 +75,17 @@ EOF
         LATEST_TAGS=""
         if [[ -n "$DOCKERFILES" ]]; then
             while IFS= read -r df; do
-                LATEST=$(grep -Ein '^FROM\s+\S+:latest|^FROM\s+[^:]+\s' "$df" 2>/dev/null | grep -v ':\S\+' || true)
-                EXPLICIT_LATEST=$(grep -Ein '^FROM\s+\S+:latest' "$df" 2>/dev/null || true)
+                EXPLICIT_LATEST=$(grep -Ei '^FROM\s+\S+:latest' "$df" 2>/dev/null || true)
+                LATEST=$(grep -Ei '^FROM\s+[^:]+\s' "$df" 2>/dev/null | grep -v ':\S\+' || true)
                 if [[ -n "$EXPLICIT_LATEST" ]]; then
-                    LATEST_TAGS="$LATEST_TAGS\n$df: $EXPLICIT_LATEST"
+                    LATEST_TAGS="$LATEST_TAGS\n$df"
                 elif [[ -n "$LATEST" ]]; then
-                    LATEST_TAGS="$LATEST_TAGS\n$df: FROM without explicit tag (defaults to :latest)"
+                    LATEST_TAGS="$LATEST_TAGS\n$df (FROM without explicit tag)"
                 fi
             done <<< "$DOCKERFILES"
         fi
         if [[ -n "$COMPOSE_FILES" ]]; then
-            COMPOSE_LATEST=$(grep -hEn 'image:.*:latest|image:\s+[^:]+\s*$' $COMPOSE_FILES 2>/dev/null || true)
+            COMPOSE_LATEST=$(grep -lEi 'image:.*:latest|image:\s+[^:]+\s*$' $COMPOSE_FILES 2>/dev/null || true)
             if [[ -n "$COMPOSE_LATEST" ]]; then
                 LATEST_TAGS="$LATEST_TAGS\n$COMPOSE_LATEST"
             fi
@@ -105,9 +105,9 @@ EOF
         if [[ -n "$COMPOSE_FILES" ]]; then
             COMPOSE_SECRETS=""
             while IFS= read -r cf; do
-                SECRETS=$(grep -Ein '(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY)\s*[:=]' "$cf" 2>/dev/null | grep -v '^\s*#' | grep -v '\${' || true)
+                SECRETS=$(grep -Ei '(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY)\s*[:=]' "$cf" 2>/dev/null | grep -v '^\s*#' | grep -v '\${' || true)
                 if [[ -n "$SECRETS" ]]; then
-                    COMPOSE_SECRETS="$COMPOSE_SECRETS\n$cf:\n$SECRETS"
+                    COMPOSE_SECRETS="$COMPOSE_SECRETS\n$cf"
                 fi
             done <<< "$COMPOSE_FILES"
 

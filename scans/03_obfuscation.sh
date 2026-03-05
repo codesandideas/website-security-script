@@ -24,7 +24,7 @@ EOF
             'base64_decode\s*\(\s*str_rot13'
         )
         B64_REGEX=$(IFS='|'; echo "${B64_PATTERNS[*]}")
-        B64_RESULTS=$(grep -rnEi "$B64_REGEX" "$SCAN_DIR" \
+        B64_RESULTS=$(grep -rlEi "$B64_REGEX" "$SCAN_DIR" \
             --include="*.php" --include="*.inc" \
             2>/dev/null | grep -v "node_modules\|vendor/" | filter_results | head -50 || true)
 
@@ -49,7 +49,7 @@ EOF
             'var\s+_0x[a-f0-9]+\s*='
         )
         JS_OBFUSC_REGEX=$(IFS='|'; echo "${JS_OBFUSC_PATTERNS[*]}")
-        JS_OBFUSC_RESULTS=$(grep -rnEi "$JS_OBFUSC_REGEX" "$SCAN_DIR" \
+        JS_OBFUSC_RESULTS=$(grep -rlEi "$JS_OBFUSC_REGEX" "$SCAN_DIR" \
             --include="*.js" --include="*.mjs" 2>/dev/null | \
             grep -v "node_modules\|\.min\.js\|dist/\|build/" | filter_results | head -30 || true)
 
@@ -65,7 +65,7 @@ EOF
     fi
 
     # ── 3c. Hex-encoded strings ─────────────────────────────────────────────────
-    HEX_RESULTS=$(grep -rnP '\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2}){10,}' "$SCAN_DIR" \
+    HEX_RESULTS=$(grep -rlP '\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2}){10,}' "$SCAN_DIR" \
         --include="*.php" --include="*.js" --include="*.py" \
         2>/dev/null | grep -v "node_modules\|vendor/\|\.min\." | filter_results | head -30 || true)
 
@@ -89,7 +89,7 @@ EOF
             'ionCube|SourceGuardian|Zend Optimizer|phpSHIELD'
         )
         OBFUSC_REGEX=$(IFS='|'; echo "${OBFUSC_PATTERNS[*]}")
-        OBFUSC_RESULTS=$(grep -rnEi "$OBFUSC_REGEX" "$SCAN_DIR" \
+        OBFUSC_RESULTS=$(grep -rlEi "$OBFUSC_REGEX" "$SCAN_DIR" \
             --include="*.php" 2>/dev/null | grep -v "node_modules\|vendor/" | filter_results | head -30 || true)
 
         if [[ -n "$OBFUSC_RESULTS" ]]; then
