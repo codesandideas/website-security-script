@@ -104,6 +104,9 @@ filter_laravel_core() {
         'database/seeders/'
         'database/factories/'
         'resources/views/welcome\.blade\.php'
+        'storage/framework/views/[a-f0-9]+\.php'
+        'storage/framework/cache/[a-z0-9/]+\.php'
+        'storage/framework/sessions/'
     )
 
     local pattern
