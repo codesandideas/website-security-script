@@ -152,7 +152,8 @@ ok()   { echo -e "${GREEN}[✓]${NC} $1"; }
 
 # ── Issue Counting ───────────────────────────────────────────────────────────
 COUNTS_LOG="$TEMP_DIR/counts.log"
-touch "$COUNTS_LOG"
+FLAGGED_PATHS_LOG="$TEMP_DIR/flagged_paths.log"
+touch "$COUNTS_LOG" "$FLAGGED_PATHS_LOG"
 
 increment_issue() {
     local severity="$1"
@@ -205,6 +206,17 @@ finding() {
     local details="${4:-}" recommendation="${5:-}"
 
     increment_issue "$severity"
+
+    # Collect file paths from details for the flagged paths file
+    if [[ -n "$details" ]]; then
+        (
+            flock -x 201
+            echo "$details" | while IFS= read -r line; do
+                # Only log lines that look like file paths (start with /)
+                [[ "$line" =~ ^/ ]] && echo "$line"
+            done >> "$FLAGGED_PATHS_LOG"
+        ) 201>"$FLAGGED_PATHS_LOG.lock"
+    fi
 
     cat >> "$REPORT_FILE" <<EOF
 

@@ -51,6 +51,7 @@ run_parallel_scans
 # Post-scan: summary + markdown report finalised here
 generate_summary
 write_recommendations
+generate_flagged_paths_file
 
 # ── Additional output formats ───────────────────────────────────────────────
 export_report_env

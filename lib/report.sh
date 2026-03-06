@@ -268,6 +268,23 @@ EOF
 EOF
 }
 
+generate_flagged_paths_file() {
+    local paths_file="${REPORT_FILE%.md}_flagged_paths.txt"
+
+    if [[ -s "$FLAGGED_PATHS_LOG" ]]; then
+        # Deduplicate, sort, and write all flagged file paths
+        sort -u "$FLAGGED_PATHS_LOG" > "$paths_file"
+        local count
+        count=$(wc -l < "$paths_file")
+        ok "Flagged paths file saved to: ${paths_file} (${count} unique files)"
+    else
+        echo "# No flagged file paths found during this scan." > "$paths_file"
+        ok "Flagged paths file saved to: ${paths_file} (no issues found)"
+    fi
+
+    FLAGGED_PATHS_FILE="$paths_file"
+}
+
 final_output() {
     # Calculate scan duration
     SCAN_END_TIME=$(date +%s)
@@ -307,5 +324,6 @@ final_output() {
     log "Scan Duration  : ${DURATION_MIN}m ${DURATION_SEC}s"
     log "Files Scanned  : $(wc -l < "$FILE_LIST" 2>/dev/null || echo 0)"
     log "Report saved to: $REPORT_FILE"
+    [[ -n "${FLAGGED_PATHS_FILE:-}" ]] && log "Flagged paths : $FLAGGED_PATHS_FILE"
     echo ""
 }
